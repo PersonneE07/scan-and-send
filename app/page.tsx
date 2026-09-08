@@ -1,7 +1,7 @@
 "use client";
 import { usePreferences, PreferenceControls } from '@/components/preferences';
 import { useRef, useState } from 'react';
-import { Camera, ImagePlus, ScanLine, ShieldCheck, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop, Plus } from 'lucide-react';
+import { Camera, ImagePlus, ScanLine, ShieldCheck, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop, Plus, Share2, ArrowLeft, ArrowRight, Undo2 } from 'lucide-react';
 import { ImageEditor } from '@/components/image-editor';
 import { ShareApp } from '@/components/share-app';
 import { Button } from '@/components/ui/button';
@@ -49,10 +49,10 @@ export default function Home() {
             {scan.preview ? <img className="scan-image" src={scan.preview} alt={t(scan.mode === 'bw' ? 'Aperçu en noir et blanc' : 'Aperçu en couleur')} /> : <div className="empty-capture">
               <div className="capture-frame"><Camera aria-hidden="true" /></div>
               <h2>{t("Votre document commence ici")}</h2><p>{t("Posez-le à plat, dans un endroit éclairé, et cadrez la page entière.")}</p>
-              <Button ref={captureButton} className="action capture-button" onClick={() => camera.current?.click()} disabled={scan.busy}><Camera />{t("Prendre une photo")}</Button>
-              <Button variant="ghost" className="action import-button" onClick={() => gallery.current?.click()} disabled={scan.busy}><ImagePlus />{t("Importer une photo")}</Button>
+              <Button ref={captureButton} className="action capture-button" onClick={() => camera.current?.click()} disabled={scan.busy || !scan.draftReady}><Camera />{t("Prendre une photo")}</Button>
+              <Button variant="ghost" className="action import-button" onClick={() => gallery.current?.click()} disabled={scan.busy || !scan.draftReady}><ImagePlus />{t("Importer une photo")}</Button>
             </div>}
-            {scan.busy && <div className={scan.preview && !scan.loading ? 'preview-updating' : 'loading-overlay'} role="status"><LoaderCircle className="spin" aria-hidden="true" />{scan.preview && !scan.loading ? t("Mise à jour du rendu…") : t("Préparation de votre document…")}</div>}
+            {scan.busy && <div className={scan.preview && !scan.loading ? 'preview-updating' : 'loading-overlay'} role="status"><LoaderCircle className="spin" aria-hidden="true" />{scan.progress ? t("Préparation de la page {current} sur {total}…", scan.progress) : scan.preview && !scan.loading ? t("Mise à jour du rendu…") : t("Préparation de votre document…")}</div>}
           </div>
           {(scan.source || scan.loading) && <div className="preview-toolbar">
             {scan.source && <>
@@ -64,18 +64,24 @@ export default function Home() {
             <Button variant="ghost" className="tool-button clear-photo-button" onClick={clearPhoto} aria-label={scan.loading ? t("Annuler l’import") : t("Effacer la page sélectionnée")}><Trash2 />{scan.loading ? t("Annuler") : t("Effacer")}</Button>
           </div>}
           {scan.source && <div className="document-pages">
-            {scan.pages.length > 1 && <div className="page-picker" aria-label={t("Pages du document")}>{scan.pages.map((page, index) => <Button key={page.id} variant="ghost" className={index === scan.activeIndex ? 'page-chip selected' : 'page-chip'} aria-pressed={index === scan.activeIndex} disabled={scan.busy} onClick={() => void scan.selectPage(page.id)}>Page {index + 1}</Button>)}</div>}
+            {scan.pages.length > 1 && <div className="page-picker" aria-label={t("Pages du document")}>{scan.pages.map((page, index) => <Button key={page.id} variant="ghost" className={index === scan.activeIndex ? 'page-chip selected' : 'page-chip'} aria-pressed={index === scan.activeIndex} disabled={scan.busy} onClick={() => void scan.selectPage(page.id)}><img src={page.preview} alt="" /><span>Page {index + 1}</span></Button>)}</div>}
+            {scan.pages.length > 1 && <fieldset className="page-order" aria-label={t("Déplacer la page sélectionnée")}>
+              <Button variant="ghost" disabled={scan.busy || scan.activeIndex <= 0} onClick={() => void scan.movePage(-1)}><ArrowLeft />{t("Avant")}</Button>
+              <Button variant="ghost" disabled={scan.busy || scan.activeIndex >= scan.pages.length - 1} onClick={() => void scan.movePage(1)}>{t("Après")}<ArrowRight /></Button>
+            </fieldset>}
             <Button variant="outline" className="add-page" disabled={scan.busy} onClick={() => setAdding(true)}><Plus />{t("Ajouter une page")}</Button>
           </div>}
+          {scan.canUndo && <div className="undo-row"><Button variant="ghost" disabled={scan.busy} onClick={() => void scan.undoLast()}><Undo2 />{t("Annuler la dernière suppression ou le remplacement")}</Button></div>}
+          {scan.source && <output className="draft-note">{t(scan.draftStatus === 'saved' ? 'Brouillon enregistré sur cet appareil (7 jours).' : scan.draftStatus === 'saving' ? 'Enregistrement du brouillon…' : 'Document temporaire : enregistrez le PDF avant de quitter.')}</output>}
         </section>
         <section className="settings-panel" aria-label={t("Préparer et enregistrer le PDF")}>
           <div className="settings-section render-section">
             <div className="render-heading-row">
             <h2 className="section-heading" id="render-heading"><span className="step-num">01</span>{t("Rendu")}</h2>
             <div className="render-switch-row" role="group" aria-labelledby="render-heading">
-              <span className={scan.mode === 'bw' ? 'active' : ''} title={t("Noir et blanc")} aria-label={t("Noir et blanc")}>{t("N&B")}</span>
+              <button type="button" disabled={scan.busy} onClick={() => scan.setMode('bw')} aria-pressed={scan.mode === 'bw'} className={scan.mode === 'bw' ? 'active' : ''} title={t("Noir et blanc")} aria-label={t("Noir et blanc")}>{t("N&B")}</button>
               <Switch checked={scan.mode === 'color'} onCheckedChange={checked => scan.setMode(checked ? 'color' : 'bw')} disabled={scan.busy} aria-label={t("Rendu couleur")} />
-              <span className={scan.mode === 'color' ? 'active' : ''}>{t("Couleur")}</span>
+              <button type="button" disabled={scan.busy} onClick={() => scan.setMode('color')} aria-pressed={scan.mode === 'color'} className={scan.mode === 'color' ? 'active' : ''}>{t("Couleur")}</button>
             </div>
             </div>
             {scan.mode === 'bw' && <div className="contrast-control">
@@ -97,15 +103,15 @@ export default function Home() {
           <div className="settings-section">
             <h2 className="section-heading"><span className="step-num">02</span>{t("Enregistrer votre PDF")}</h2>
             <div className="filename-row">
-              <label className="field-label" htmlFor="filename">{t("Nom du document")}</label>
+              <label className="field-label" htmlFor="filename">{t("Nom du PDF")}</label>
               <div className="filename-field"><Input id="filename" value={scan.name} onChange={event => scan.setName(event.target.value)} maxLength={90} autoComplete="off" spellCheck={false} /><span>.pdf</span></div>
             </div>
             <div className="pdf-summary"><span>{scan.pdf ? `${scan.pages.length} page${scan.pages.length > 1 ? 's' : ''} · ${scan.size}` : t("Format PDF · A4")}</span>{scan.pdf ? <span className="status-ready"><Check />{t("Prêt à enregistrer")}</span> : <span>{scan.busy ? t("Préparation…") : scan.source ? t("À préparer") : t("En attente de photo")}</span>}</div>
             <div className="export-actions">
               {scan.pdf ? <a className="action" href={scan.pdf.url} download={scan.pdf.file.name} onClick={scan.save}><Download />{t("Enregistrer le PDF")}</a> : <Button className="action" disabled><Download />{t("Enregistrer le PDF")}</Button>}
-              <Button variant="outline" className="action" disabled={!scan.pdf || scan.busy} onClick={scan.share}><Mail />{t("Envoyer par mail")}</Button>
+              <Button variant="outline" className="action" disabled={!scan.pdf || scan.busy} onClick={scan.share}><Share2 />{t("Partager le PDF")}</Button>
             </div>
-            <p className="helper">{t("Le PDF s’enregistre dans vos fichiers.")}<br />{t("Pour l’envoyer, choisissez votre application mail.")}</p>
+            <p className="helper">{t("Le PDF s’enregistre dans vos fichiers.")}<br />{t("Pour un envoi par mail, choisissez votre messagerie dans le partage.")}</p>
             {scan.pdf && <a className="pdf-open" href={scan.pdf.url} target="_blank" rel="noopener noreferrer">{t("Ouvrir le PDF")}<ArrowUpRight /></a>}
           </div>
           {scan.error && <p className="feedback error" role="alert">{scan.error}</p>}
@@ -114,6 +120,17 @@ export default function Home() {
       </div>
       <footer className="site-footer"><p className="local-note"><ShieldCheck aria-hidden="true" />{t("Aucun document envoyé sur un serveur.")}</p><ShareApp /></footer>
     </main>
+    <Dialog open={!!scan.pendingDraft && !scan.loading}>
+      <DialogContent className="mail-dialog" showCloseButton={false}>
+        <DialogTitle>{t("Reprendre votre document ?")}</DialogTitle>
+        <DialogDescription>{t("Un brouillon est enregistré uniquement dans ce navigateur. Reprenez-le ou effacez-le pour commencer un nouveau document.")}</DialogDescription>
+        <div className="dialog-actions">
+          <Button className="action" disabled={scan.busy} onClick={() => void scan.restoreDraft()}>{t("Reprendre le brouillon")}</Button>
+          <Button variant="outline" className="action" disabled={scan.busy} onClick={() => void scan.discardDraft()}>{t("Effacer le brouillon")}</Button>
+        </div>
+        {scan.error && <p role="alert" className="feedback error">{scan.error}</p>}
+      </DialogContent>
+    </Dialog>
     {scan.editor && <ImageEditor key={scan.editor.url} image={scan.editor} onApply={scan.applyEdits} onCancel={scan.closeEditor} />}
     <Dialog open={adding} onOpenChange={setAdding}>
       <DialogContent className="mail-dialog" showCloseButton={false}>

@@ -1,10 +1,11 @@
 "use client";
+import { readDraft, writeDraft, type Draft } from '@/lib/draft';
 import { translate, translateMessage, type Locale } from '@/lib/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MAX_PAGES, DEFAULT_CONTRAST, cloneImageEdits, combinePages, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, snapshotPhoto, type ImageEdits, type RenderMode } from '@/lib/document';
 
 type Settings = { mode: RenderMode; rotation: number; contrast: number; edits: ImageEdits };
-type ScanPage = { id: number; photo: Blob; settings: Settings; pdfBlob: Blob | null; preview: string };
+type ScanPage = { id: number; photo: Blob; settings: Settings; pdfBlob: Blob | null; preview: string; previewBlob: Blob };
 type Artifact = { pdfBlob: Blob; url: string };
 type Editor = { url: string; width: number; height: number; edits: ImageEdits; generation: number };
 type WebTool = { name: string; description: string; inputSchema: object; annotations: { readOnlyHint: boolean; untrustedContentHint: boolean }; execute: (input: unknown) => unknown };
@@ -15,6 +16,11 @@ const copySettings = (settings: Settings): Settings => ({ ...settings, edits: cl
 const release = (canvas: HTMLCanvasElement | null) => { if (canvas) { canvas.width = 0; canvas.height = 0; } };
 
 export function useScanner(locale: Locale = 'fr') {
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [pendingDraft, setPendingDraft] = useState<Draft | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftResult, setDraftResult] = useState<{ pages: { id: number; preview: string }[]; name: string | null; status: 'saved' | 'temporary' } | null>(null);
+  const [undo, setUndo] = useState<{ page: ScanPage; index: number; replacementId: number | null; name: string | null } | null>(null);
   const [preview, setPreview] = useState('');
   const [mode, setModeState] = useState<RenderMode>('bw');
   const [contrast, setContrastState] = useState(DEFAULT_CONTRAST);
@@ -56,7 +62,7 @@ export function useScanner(locale: Locale = 'fr') {
     activeRender.current?.abort(); activeRender.current = null;
     activeImport.current?.abort(); activeImport.current = null;
     closeEditor();
-    setBusy(false); setLoading(false); setError(''); setNotice(''); setFallback(false);
+    setProgress(null); setBusy(false); setLoading(false); setError(''); setNotice(''); setFallback(false);
   }, [closeEditor]);
 
   const publish = useCallback(async (job: number, signal: AbortSignal) => {
@@ -88,7 +94,7 @@ export function useScanner(locale: Locale = 'fr') {
       if (job !== generation.current) return null;
       const url = URL.createObjectURL(result.previewBlob);
       URL.revokeObjectURL(page.preview);
-      page.preview = url; page.pdfBlob = result.pdfBlob;
+      page.previewBlob = result.previewBlob; page.preview = url; page.pdfBlob = result.pdfBlob;
       setPreview(url); syncPages();
       return await publish(job, controller.signal);
     } catch (cause) {
@@ -116,7 +122,8 @@ export function useScanner(locale: Locale = 'fr') {
     let workingCanvas: HTMLCanvasElement | null = null;
     setLoading(true); setBusy(true);
     try {
-      for (const file of replaceCurrent ? files.slice(0, 1) : files) {
+      for (const [index, file] of incoming.entries()) {
+        setProgress({ current: index + 1, total: incoming.length });
         release(workingCanvas); workingCanvas = null;
         workingCanvas = await normalizePhoto(file, controller.signal);
         const photo = await snapshotPhoto(workingCanvas, controller.signal);
@@ -125,12 +132,13 @@ export function useScanner(locale: Locale = 'fr') {
         controller.signal.throwIfAborted();
         storedBytes += photo.size + result.pdfBlob.size + result.previewBlob.size;
         if (storedBytes > 100 * 1024 * 1024) throw new Error('Ce document est trop volumineux. Enregistrez-le puis créez un autre PDF.');
-        staged.push({ page: { id: ++nextId.current, photo, settings: next, pdfBlob: result.pdfBlob, preview: '' }, previewBlob: result.previewBlob });
+        staged.push({ page: { id: ++nextId.current, photo, settings: next, pdfBlob: result.pdfBlob, preview: '', previewBlob: result.previewBlob }, previewBlob: result.previewBlob });
       }
       if (job !== generation.current) return;
       const additions = staged.map(item => ({ ...item.page, preview: URL.createObjectURL(item.previewBlob) }));
       const replaceIndex = pagesRef.current.findIndex(page => page.id === replacingId);
       if (replaceIndex !== -1) {
+        setUndo({ page: { ...pagesRef.current[replaceIndex], settings: copySettings(pagesRef.current[replaceIndex].settings) }, index: replaceIndex, replacementId: additions[0].id, name: customName });
         URL.revokeObjectURL(pagesRef.current[replaceIndex].preview);
         pagesRef.current = pagesRef.current.map((page, index) => index === replaceIndex ? additions[0] : page);
       } else pagesRef.current = [...pagesRef.current, ...additions];
@@ -146,9 +154,9 @@ export function useScanner(locale: Locale = 'fr') {
     } finally {
       release(workingCanvas);
       if (activeImport.current === controller) activeImport.current = null;
-      if (job === generation.current) { setLoading(false); setBusy(false); }
+      if (job === generation.current) { setProgress(null); setLoading(false); setBusy(false); }
     }
-  }, [cancelWork, publish, syncPages]);
+  }, [cancelWork, customName, publish, syncPages]);
 
   const selectPage = useCallback(async (id: number) => {
     const page = pagesRef.current.find(page => page.id === id);
@@ -165,14 +173,18 @@ export function useScanner(locale: Locale = 'fr') {
       activeId.current = id; settings.current = copySettings(page.settings);
       setSelectedId(id); setPreview(page.preview); setModeState(page.settings.mode); setContrastState(page.settings.contrast);
       setLoading(false); activeImport.current = null;
-      await regenerate();
+      if (page.pdfBlob) {
+        activeRender.current = controller;
+        await publish(job, controller.signal);
+        if (job === generation.current) setBusy(false);
+      } else await regenerate();
     } catch (cause) {
       if (job === generation.current) { setError(cause instanceof Error ? cause.message : 'Cette page ne peut pas être ouverte.'); setBusy(false); setLoading(false); }
     } finally {
       release(canvas);
       if (activeImport.current === controller) activeImport.current = null;
     }
-  }, [cancelWork, regenerate]);
+  }, [cancelWork, publish, regenerate]);
 
   const setMode = useCallback((value: string) => {
     if (value !== 'bw' && value !== 'color') return;
@@ -229,7 +241,10 @@ export function useScanner(locale: Locale = 'fr') {
     if (activeImport.current) { cancelWork(); return; }
     cancelWork();
     const index = pagesRef.current.findIndex(page => page.id === activeId.current);
-    if (index !== -1) URL.revokeObjectURL(pagesRef.current[index].preview);
+    if (index !== -1) {
+      setUndo({ page: { ...pagesRef.current[index], settings: copySettings(pagesRef.current[index].settings) }, index, replacementId: null, name: customName });
+      URL.revokeObjectURL(pagesRef.current[index].preview);
+    }
     pagesRef.current = pagesRef.current.filter(page => page.id !== activeId.current);
     release(original.current); original.current = null;
     activeId.current = null; setSelectedId(null); setPreview(''); setArtifact(null); syncPages();
@@ -239,7 +254,94 @@ export function useScanner(locale: Locale = 'fr') {
       if (documentUrl.current) { URL.revokeObjectURL(documentUrl.current); documentUrl.current = null; }
       settings.current = newSettings(); setModeState('bw'); setContrastState(DEFAULT_CONTRAST); setName(null);
     }
-  }, [cancelWork, selectPage, syncPages]);
+  }, [cancelWork, customName, selectPage, syncPages]);
+
+  const undoLast = async () => {
+    if (!undo || busy) return;
+    const replacement = pagesRef.current.findIndex(page => page.id === undo.replacementId);
+    if (replacement === -1 && pagesRef.current.length >= MAX_PAGES) return;
+    cancelWork();
+    const restored = { ...undo.page, settings: copySettings(undo.page.settings), preview: URL.createObjectURL(undo.page.previewBlob) };
+    if (replacement !== -1) {
+      URL.revokeObjectURL(pagesRef.current[replacement].preview);
+      pagesRef.current.splice(replacement, 1, restored);
+    } else pagesRef.current.splice(Math.min(undo.index, pagesRef.current.length), 0, restored);
+    setName(undo.name); setUndo(null); setArtifact(null); syncPages();
+    await selectPage(restored.id);
+  };
+
+  const movePage = async (offset: number) => {
+    if (busy || (offset !== -1 && offset !== 1)) return;
+    const index = pagesRef.current.findIndex(page => page.id === activeId.current);
+    const target = index + offset;
+    if (index < 0 || target < 0 || target >= pagesRef.current.length) return;
+    cancelWork(); setBusy(true); setArtifact(null);
+    const controller = new AbortController(); activeRender.current = controller;
+    const job = generation.current;
+    [pagesRef.current[index], pagesRef.current[target]] = [pagesRef.current[target], pagesRef.current[index]];
+    syncPages();
+    try { await publish(job, controller.signal); }
+    catch { if (job === generation.current) setError('Le PDF n’a pas pu être créé.'); }
+    finally { if (job === generation.current) setBusy(false); }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    readDraft().then(draft => { if (alive) setPendingDraft(draft); })
+      .catch(() => { /* Export remains available without persistent storage. */ })
+      .finally(() => { if (alive) setDraftReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady || pendingDraft || busy) return;
+    let alive = true;
+    const draft: Draft | null = pagesRef.current.length ? {
+      version: 1, savedAt: Date.now(), name: customName,
+      pages: pagesRef.current.map(page => ({ photo: page.photo, settings: copySettings(page.settings) })),
+    } : null;
+    writeDraft(draft).then(() => { if (alive) setDraftResult({ pages, name: customName, status: 'saved' }); })
+      .catch(() => { if (alive) setDraftResult({ pages, name: customName, status: 'temporary' }); });
+    return () => { alive = false; };
+  }, [draftReady, pendingDraft, pages, customName, busy]);
+
+  const discardDraft = async () => {
+    try { await writeDraft(null); setPendingDraft(null); }
+    catch { setError('Le brouillon local n’a pas pu être effacé. Réessayez.'); }
+  };
+
+  const restoreDraft = async () => {
+    if (!pendingDraft || busy) return;
+    cancelWork(); setBusy(true); setLoading(true);
+    const job = generation.current, controller = new AbortController(); activeImport.current = controller;
+    const staged: ScanPage[] = [];
+    let canvas: HTMLCanvasElement | null = null;
+    try {
+      for (const [index, item] of pendingDraft.pages.entries()) {
+        setProgress({ current: index + 1, total: pendingDraft.pages.length });
+        release(canvas); canvas = null;
+        canvas = await normalizePhoto(new File([item.photo], 'page.png', { type: 'image/png' }), controller.signal);
+        const next = copySettings(item.settings);
+        const rendered = await renderDocument(canvas, next.mode, next.rotation, next.contrast, controller.signal, next.edits);
+        controller.signal.throwIfAborted();
+        staged.push({ id: ++nextId.current, photo: item.photo, settings: next, ...rendered, preview: '' });
+      }
+      if (job !== generation.current) return;
+      for (const page of pagesRef.current) URL.revokeObjectURL(page.preview);
+      pagesRef.current = staged.map(page => ({ ...page, preview: URL.createObjectURL(page.previewBlob) }));
+      const selected = pagesRef.current[0];
+      release(original.current); original.current = null;
+      setName(pendingDraft.name); setPendingDraft(null); setUndo(null); syncPages();
+      activeImport.current = null;
+      await selectPage(selected.id);
+    } catch (cause) {
+      if (job === generation.current) setError(cause instanceof Error ? cause.message : 'Le brouillon n’a pas pu être restauré.');
+    } finally {
+      release(canvas);
+      if (activeImport.current === controller) activeImport.current = null;
+      if (job === generation.current) { setProgress(null); setLoading(false); setBusy(false); }
+    }
+  };
 
   // PDF bytes are prepared before the tap so native sharing keeps user activation.
   const pdf = useMemo(() => artifact && !busy ? { url: artifact.url, file: new File([artifact.pdfBlob], safeFilename(name || translate(locale, 'Mon document')), { type: 'application/pdf' }) } : null, [artifact, busy, name, locale]);
@@ -256,7 +358,7 @@ export function useScanner(locale: Locale = 'fr') {
       if (!navigator.share || !navigator.canShare?.({ files: [pdf.file] })) { setFallback(true); return; }
       sharing.current = true;
       await navigator.share({ files: [pdf.file], title: pdf.file.name });
-      if (sharedGeneration === generation.current) setNotice('Le partage a été ouvert. Terminez l’envoi dans l’application mail choisie.');
+      if (sharedGeneration === generation.current) setNotice('Le partage a été ouvert. Terminez l’envoi dans l’application choisie.');
     } catch (cause) {
       if (sharedGeneration === generation.current && !(cause instanceof Error && cause.name === 'AbortError')) setFallback(true);
     } finally { sharing.current = false; }
@@ -313,5 +415,5 @@ export function useScanner(locale: Locale = 'fr') {
   }, []);
 
   const size = artifact ? (artifact.pdfBlob.size < 1024 * 1024 ? `${Math.max(1, Math.round(artifact.pdfBlob.size / 1024))} ${locale === 'fr' ? 'Ko' : 'KB'}` : `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(artifact.pdfBlob.size / (1024 * 1024))} ${locale === 'fr' ? 'Mo' : 'MB'}`) : '';
-  return { pages, activeIndex: pages.findIndex(page => page.id === selectedId), source: pages.length > 0, preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, editor, openEditor, closeEditor, applyEdits, defaultContrast: DEFAULT_CONTRAST, name, setName, busy, loading, pdf, error: translateMessage(locale, error), notice: translateMessage(locale, notice), fallback, setFallback, loadFiles, selectPage, rotate, save, share, size };
+  return { progress, pendingDraft, draftReady, draftStatus: !busy && draftResult?.pages === pages && draftResult.name === customName ? draftResult.status : 'saving', restoreDraft, discardDraft, canUndo: !!undo && (undo.replacementId !== null || pages.length < MAX_PAGES), undoLast, movePage, pages, activeIndex: pages.findIndex(page => page.id === selectedId), source: pages.length > 0, preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, editor, openEditor, closeEditor, applyEdits, defaultContrast: DEFAULT_CONTRAST, name, setName, busy, loading, pdf, error: translateMessage(locale, error), notice: translateMessage(locale, notice), fallback, setFallback, loadFiles, selectPage, rotate, save, share, size };
 }

@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes, createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import React from 'react';
+import { IDBFactory } from 'fake-indexeddb';
+import { readDraft } from '../lib/draft.ts';
 import { create, act } from 'react-test-renderer';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { PDFDocument, PDFName, PDFDict, PDFRawStream } from 'pdf-lib';
@@ -15,6 +17,7 @@ const require = createRequire(import.meta.url);
 let source = await readFile(new URL('../hooks/use-scanner.ts', import.meta.url), 'utf8');
 source = source.replace("from 'react'", `from '${pathToFileURL(require.resolve('react')).href}'`)
   .replace('normalizePhoto, ', '')
+  .replace("from '@/lib/draft'", `from '${new URL('../lib/draft.ts', import.meta.url).href}'`)
   .replace("from '@/lib/i18n'", `from '${new URL('../lib/i18n.ts', import.meta.url).href}'`)
   .replace("from '@/lib/document'", `from '${new URL('../lib/document.ts', import.meta.url).href}'`);
 source = 'const normalizePhoto = (...args) => globalThis.scannerTestDecode(...args);\n' + stripTypeScriptTypes(source);
@@ -55,6 +58,7 @@ async function harness(t, locale = 'fr') {
   });
   return {
     get api() { return api; },
+    async remount() { await act(async () => root.unmount()); await act(async () => { root = create(React.createElement(Probe)); }); await act(pause); },
     async language(next) { locale = next; await act(async () => root.update(React.createElement(Probe))); },
     async run(action) {
       await act(async () => { await action(api); await pause(); });
@@ -193,4 +197,64 @@ test('language changes preserve pages and custom filenames and translate feedbac
   await h.language('fr');
   assert.match(h.api.error, /20 pages/);
   assert.equal(h.api.pdf.file.name, 'Invoice été.pdf');
+});
+
+
+test('undo restores deleted and replaced pages and reordering changes the actual PDF', async t => {
+  const h = await harness(t);
+  await h.run(api => api.setMode('color'));
+  await h.run(api => api.loadFiles([photo('red'), photo('blue')]));
+  await h.run(api => api.setName('Two pages'));
+  await h.run(api => api.movePage(-1));
+  assert.equal(h.api.activeIndex, 0);
+  await assertColors(h.api, [[0, 0, 255], [255, 0, 0]]);
+  await h.run(api => api.loadFiles([photo('lime')], true));
+  await assertColors(h.api, [[0, 255, 0], [255, 0, 0]]);
+  await h.run(api => api.undoLast());
+  await assertColors(h.api, [[0, 0, 255], [255, 0, 0]]);
+  assert.equal(h.api.canUndo, false);
+  await h.run(api => api.clearPhoto());
+  await h.run(api => api.undoLast());
+  await assertColors(h.api, [[0, 0, 255], [255, 0, 0]]);
+  await h.run(api => api.clearPhoto());
+  await h.run(api => api.clearPhoto());
+  assert.equal(h.api.source, false);
+  await h.run(api => api.undoLast());
+  await assertColors(h.api, [[255, 0, 0]]);
+  assert.equal(h.api.name, 'Two pages');
+});
+
+test('a local draft restores page order, edits and filename after remount, or can be discarded', async t => {
+  globalThis.indexedDB = new IDBFactory();
+  t.after(() => { delete globalThis.indexedDB; });
+  const h = await harness(t);
+  await h.run(api => api.setMode('color'));
+  await h.run(api => api.loadFiles([photo('red'), photo('blue')]));
+  await h.run(api => api.movePage(-1));
+  await h.run(api => api.setName('Saved draft'));
+  await h.run(api => api.openEditor());
+  await h.run(api => api.applyEdits({ crop: { unit: '%', x: 0, y: 0, width: 50, height: 100 }, scale: 1 }));
+  const saved = await readDraft();
+  assert.equal(saved.name, 'Saved draft');
+  assert.equal(saved.pages.length, 2);
+  await h.remount();
+  assert.ok(h.api.pendingDraft);
+  assert.equal(h.api.source, false, 'Restoration requires an explicit choice');
+  await h.run(api => api.restoreDraft());
+  assert.equal(h.api.pendingDraft, null);
+  assert.equal(h.api.name, 'Saved draft');
+  await assertColors(h.api, [[0, 0, 255], [255, 0, 0]]);
+  assert.equal((await images(h.api))[0].dict.get(PDFName.of('Width')).asNumber(), 40);
+  await h.remount();
+  await h.run(api => api.discardDraft());
+  assert.equal(await readDraft(), null);
+  assert.equal(h.api.pendingDraft, null);
+  assert.equal(h.api.source, false);
+});
+
+test('storage failure does not prevent PDF export', async t => {
+  const h = await harness(t);
+  await h.run(api => api.loadFiles([photo('blue')]));
+  assert.ok(h.api.pdf);
+  assert.equal(h.api.draftStatus, 'temporary');
 });

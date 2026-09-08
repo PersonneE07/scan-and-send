@@ -1,8 +1,8 @@
 # Scan and Send
 
-Application de photo vers PDF, en français. Une ou plusieurs photos par document, rendus couleur et noir et blanc, rotation, export A4, téléchargement et partage du fichier PDF.
+Application de photo vers PDF, en français et en anglais, avec thèmes clair et sombre. Une ou plusieurs photos par document, rendus couleur et noir et blanc, rotation, export A4, téléchargement et partage du fichier PDF.
 
-**Ajouter une page** permet de prendre une autre photo ou d’importer plusieurs images dans le même PDF. Les boutons **Page 1, Page 2…** sélectionnent la page à modifier. Chaque page conserve son rendu, son contraste, sa rotation et son recadrage. **Reprendre** et **Remplacer** changent seulement la page sélectionnée, à sa position actuelle. L’export et le partage contiennent toutes les pages dans l’ordre d’ajout. Un import multiple échoué ou annulé conserve le document précédent sans ajouter de pages partielles.
+**Ajouter une page** permet de prendre une autre photo ou d’importer plusieurs images dans le même PDF. Les boutons **Page 1, Page 2…** sélectionnent la page à modifier. Chaque page conserve son rendu, son contraste, sa rotation et son recadrage. **Reprendre** et **Remplacer** changent seulement la page sélectionnée, à sa position actuelle. L’export et le partage contiennent toutes les pages dans l’ordre affiché ; les miniatures et les boutons **Avant / Après** permettent de réorganiser les pages. Un import multiple échoué ou annulé conserve le document précédent sans ajouter de pages partielles.
 
 **Rogner** ouvre un cadre ajustable au doigt, à la souris ou au clavier. La largeur ou la hauteur en pixels se règle en conservant les proportions, jusqu’à 2200 px sur le plus grand côté. **Appliquer** met à jour l’aperçu et le PDF ; **Annuler** conserve le document précédent. **Image entière** rétablit le cadre et les dimensions initiaux. Le recadrage reste modifiable à partir de la photo de travail complète et suit les rotations.
 
@@ -10,13 +10,13 @@ Dans **Rogner → 4 coins libres**, chaque coin se place indépendamment sur la 
 
 En noir et blanc, le curseur **Contraste** ajuste le rendu de 0 (plus clair) à 100 (plus marqué). La valeur 50 conserve le rendu initial. Le réglage agit sur l’aperçu et le PDF ; un bouton permet de le réinitialiser. Il est conservé lors du passage couleur/noir et blanc et remis à 50 pour une nouvelle photo. Les changements rapides sont regroupés et l’enregistrement attend le dernier rendu choisi.
 
-Les photos sont décodées et transformées dans le navigateur, sans envoi au serveur. Le PDF reste en mémoire jusqu’au téléchargement ou au partage. Il n’y a pas d’historique persistant dans l’application.
+Les photos sont décodées et transformées dans le navigateur, sans envoi au serveur. Le PDF reste en mémoire jusqu’au téléchargement ou au partage. Un seul brouillon est sauvegardé automatiquement dans IndexedDB : photos de travail PNG, réglages de chaque page, ordre et nom du document. Après rechargement, une boîte de dialogue propose de le reprendre ou de l’effacer. Un brouillon de plus de 7 jours depuis sa dernière sauvegarde est effacé à la prochaine ouverture (aucune suppression en arrière-plan lorsque le site est fermé). Le navigateur peut évincer ces données ; en cas de stockage indisponible, l’app indique que le document est temporaire. Le PDF exporté reste la copie durable.
 
-**Effacer** retire la page sélectionnée et met à jour le PDF. Retirer la dernière page revient à la prise de photo et réinitialise le document. Pendant un import, **Annuler** interrompt l’ajout ou le remplacement sans retirer les pages existantes. Seule la page active reste décodée en canvas ; les autres originaux de travail sont conservés sous forme de blobs PNG en mémoire, sans stockage persistant ni envoi au serveur.
+**Effacer** retire la page sélectionnée et met à jour le PDF. Retirer la dernière page revient à la prise de photo et réinitialise le document. Pendant un import, **Annuler** interrompt l’ajout ou le remplacement sans retirer les pages existantes. Seule la page active reste décodée en canvas ; les autres originaux de travail sont conservés sous forme de blobs PNG en mémoire, avec une copie dans le brouillon local, sans envoi au serveur. Une action permet d’annuler la dernière suppression ou le dernier remplacement pendant la session. Effacer toutes les pages efface aussi le brouillon persistant ; l’annulation reste disponible en mémoire jusqu’à la fermeture ou la prochaine suppression/remplacement.
 
 ## Utilisation
 
-Prendre une photo ou importer une image, choisir le rendu et le nom, puis enregistrer le PDF. Sur iPhone, si Safari ouvre le fichier, utiliser Partager → Enregistrer dans Fichiers. Le bouton d’envoi utilise le partage natif de fichiers : choisir Mail ou Gmail et le destinataire. Si cette capacité manque, une boîte de dialogue guide le téléchargement puis l’ajout manuel de la pièce jointe. L’application ne prétend jamais qu’un fichier a été enregistré ou qu’un email a été envoyé.
+Prendre une photo ou importer une image, choisir le rendu et le nom, puis enregistrer le PDF. Sur iPhone, si Safari ouvre le fichier, utiliser Partager → Enregistrer dans Fichiers. Le bouton **Partager le PDF** utilise le partage natif de fichiers : choisir Mail ou Gmail et le destinataire. Si cette capacité manque, une boîte de dialogue guide le téléchargement puis l’ajout manuel de la pièce jointe. L’application ne prétend jamais qu’un fichier a été enregistré ou qu’un email a été envoyé.
 
 ## Développement
 
