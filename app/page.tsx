@@ -4,7 +4,7 @@ import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Downlo
 import { ImageEditor } from '@/components/image-editor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog';
 import { useScanner } from '@/hooks/use-scanner';
@@ -53,17 +53,18 @@ export default function Home() {
               <Button variant="ghost" className="tool-button" onClick={() => gallery.current?.click()} disabled={scan.busy}><RefreshCw />Remplacer</Button>
               <Button variant="ghost" className="tool-button" onClick={scan.rotate} disabled={scan.busy}><RotateCw />Tourner</Button>
             </>}
-            <Button variant="ghost" className="tool-button clear-photo-button" onClick={clearPhoto}><Trash2 />{scan.loading && !scan.source ? 'Annuler' : 'Effacer la photo'}</Button>
+            <Button variant="ghost" className="tool-button clear-photo-button" onClick={clearPhoto} aria-label={scan.loading && !scan.source ? 'Annuler l’import' : 'Effacer la photo'}><Trash2 />{scan.loading && !scan.source ? 'Annuler' : 'Effacer'}</Button>
           </div>}
           <div className="preview-bottom"><LockKeyhole aria-hidden="true" />Vos photos restent sur votre appareil.</div>
         </section>
         <section className="settings-panel" aria-label="Préparer et enregistrer le PDF">
-          <div className="settings-section">
-            <h2 className="section-heading" id="render-heading"><span className="step-num">01</span>Choisir le rendu</h2>
-            <RadioGroup value={scan.mode} onValueChange={value => scan.setMode(String(value))} className="render-choices" aria-labelledby="render-heading" disabled={scan.busy}>
-              <label className={`render-choice ${scan.mode === 'bw' ? 'selected' : ''}`}><span className="sample-type" aria-hidden="true">Aa</span><span className="choice-label">Noir et blanc<RadioGroupItem value="bw" aria-label="Noir et blanc" /></span></label>
-              <label className={`render-choice ${scan.mode === 'color' ? 'selected' : ''}`}><span className="sample-type color" aria-hidden="true">A<i>a</i></span><span className="choice-label">Couleur<RadioGroupItem value="color" aria-label="Couleur" /></span></label>
-            </RadioGroup>
+          <div className="settings-section render-section">
+            <h2 className="section-heading" id="render-heading"><span className="step-num">01</span>Rendu</h2>
+            <div className="render-switch-row" role="group" aria-labelledby="render-heading">
+              <span className={scan.mode === 'bw' ? 'active' : ''}>Noir et blanc</span>
+              <Switch checked={scan.mode === 'color'} onCheckedChange={checked => scan.setMode(checked ? 'color' : 'bw')} disabled={scan.busy} aria-label="Rendu couleur" />
+              <span className={scan.mode === 'color' ? 'active' : ''}>Couleur</span>
+            </div>
             {scan.mode === 'bw' && <div className="contrast-control">
               <div className="contrast-heading"><span id="contrast-label">Contraste</span><output aria-label="Valeur du contraste">{scan.contrast} %</output></div>
               <Slider
