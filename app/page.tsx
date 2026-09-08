@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from 'react';
-import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop, Plus } from 'lucide-react';
+import { Camera, ImagePlus, ScanLine, ShieldCheck, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop, Plus } from 'lucide-react';
 import { ImageEditor } from '@/components/image-editor';
 import { ShareApp } from '@/components/share-app';
 import { Button } from '@/components/ui/button';
@@ -65,18 +65,19 @@ export default function Home() {
             {scan.pages.length > 1 && <div className="page-picker" aria-label="Pages du document">{scan.pages.map((page, index) => <Button key={page.id} variant="ghost" className={index === scan.activeIndex ? 'page-chip selected' : 'page-chip'} aria-pressed={index === scan.activeIndex} disabled={scan.busy} onClick={() => void scan.selectPage(page.id)}>Page {index + 1}</Button>)}</div>}
             <Button variant="outline" className="add-page" disabled={scan.busy} onClick={() => setAdding(true)}><Plus />Ajouter une page</Button>
           </div>}
-          <div className="preview-bottom"><LockKeyhole aria-hidden="true" />Vos photos restent sur votre appareil.</div>
         </section>
         <section className="settings-panel" aria-label="Préparer et enregistrer le PDF">
           <div className="settings-section render-section">
+            <div className="render-heading-row">
             <h2 className="section-heading" id="render-heading"><span className="step-num">01</span>Rendu</h2>
             <div className="render-switch-row" role="group" aria-labelledby="render-heading">
-              <span className={scan.mode === 'bw' ? 'active' : ''}>Noir et blanc</span>
+              <span className={scan.mode === 'bw' ? 'active' : ''} title="Noir et blanc" aria-label="Noir et blanc">N&amp;B</span>
               <Switch checked={scan.mode === 'color'} onCheckedChange={checked => scan.setMode(checked ? 'color' : 'bw')} disabled={scan.busy} aria-label="Rendu couleur" />
               <span className={scan.mode === 'color' ? 'active' : ''}>Couleur</span>
             </div>
+            </div>
             {scan.mode === 'bw' && <div className="contrast-control">
-              <div className="contrast-heading"><span id="contrast-label">Contraste</span><output aria-label="Valeur du contraste">{scan.contrast} %</output></div>
+              <div className="contrast-heading"><span id="contrast-label">Contraste</span>
               <Slider
                 className="contrast-slider"
                 aria-labelledby="contrast-label"
@@ -86,6 +87,7 @@ export default function Home() {
                 onValueChange={value => scan.setContrast(Array.isArray(value) ? value[0] : value)}
                 onValueCommitted={scan.commitContrast}
               />
+              <output aria-label="Valeur du contraste">{scan.contrast} %</output></div>
               <div className="contrast-scale" aria-hidden="true"><span>Plus clair</span><span>Plus marqué</span></div>
               <div className="contrast-footnote"><span>Ajustez la lisibilité du texte.</span><Button variant="ghost" className="contrast-reset" disabled={!scan.source || scan.loading || scan.contrast === scan.defaultContrast} onClick={() => scan.setContrast(scan.defaultContrast)}>Réinitialiser</Button></div>
             </div>}
