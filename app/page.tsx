@@ -94,8 +94,10 @@ export default function Home() {
           </div>
           <div className="settings-section">
             <h2 className="section-heading"><span className="step-num">02</span>Enregistrer votre PDF</h2>
-            <label className="field-label" htmlFor="filename">Nom du document</label>
-            <div className="filename-field"><Input id="filename" value={scan.name} onChange={event => scan.setName(event.target.value)} maxLength={90} autoComplete="off" spellCheck={false} /><span>.pdf</span></div>
+            <div className="filename-row">
+              <label className="field-label" htmlFor="filename">Nom du document</label>
+              <div className="filename-field"><Input id="filename" value={scan.name} onChange={event => scan.setName(event.target.value)} maxLength={90} autoComplete="off" spellCheck={false} /><span>.pdf</span></div>
+            </div>
             <div className="pdf-summary"><span>{scan.pdf ? `${scan.pages.length} page${scan.pages.length > 1 ? 's' : ''} · ${scan.size}` : 'Format PDF · A4'}</span>{scan.pdf ? <span className="status-ready"><Check />Prêt à enregistrer</span> : <span>{scan.busy ? 'Préparation…' : scan.source ? 'À préparer' : 'En attente de photo'}</span>}</div>
             <div className="export-actions">
               {scan.pdf ? <a className="action" href={scan.pdf.url} download={scan.pdf.file.name} onClick={scan.save}><Download />Enregistrer le PDF</a> : <Button className="action" disabled><Download />Enregistrer le PDF</Button>}
