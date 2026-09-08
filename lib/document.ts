@@ -2,6 +2,36 @@ export type RenderMode = 'bw' | 'color';
 export const DEFAULT_CONTRAST = 50;
 const MAX_EDGE = 2200;
 
+export type CropArea = { unit: '%'; x: number; y: number; width: number; height: number };
+export type ImageEdits = { crop: CropArea; scale: number };
+export function defaultImageEdits(): ImageEdits {
+  return { crop: { unit: '%', x: 0, y: 0, width: 100, height: 100 }, scale: 1 };
+}
+
+export function imageGeometry(width: number, height: number, rotation: number, edits = defaultImageEdits()) {
+  if (![width, height, rotation].every(Number.isFinite) || width < 1 || height < 1 || rotation % 90 !== 0) throw new Error('Dimensions de la photo invalides.');
+  const { crop, scale } = edits;
+  if (crop.unit !== '%' || ![crop.x, crop.y, crop.width, crop.height, scale].every(Number.isFinite) || crop.x < 0 || crop.y < 0 || crop.width <= 0 || crop.height <= 0 || crop.x + crop.width > 100.000001 || crop.y + crop.height > 100.000001 || scale <= 0) throw new Error('Choisissez un cadre valide à l’intérieur de la photo.');
+  const quarterTurn = Math.abs(rotation % 180) === 90;
+  const orientedWidth = quarterTurn ? height : width, orientedHeight = quarterTurn ? width : height;
+  const cropX = Math.min(orientedWidth - 1, Math.round(orientedWidth * crop.x / 100));
+  const cropY = Math.min(orientedHeight - 1, Math.round(orientedHeight * crop.y / 100));
+  const cropWidth = Math.max(1, Math.min(orientedWidth - cropX, Math.round(orientedWidth * crop.width / 100)));
+  const cropHeight = Math.max(1, Math.min(orientedHeight - cropY, Math.round(orientedHeight * crop.height / 100)));
+  const effectiveScale = Math.min(scale, MAX_EDGE / Math.max(cropWidth, cropHeight));
+  return {
+    orientedWidth, orientedHeight, cropX, cropY, cropWidth, cropHeight, effectiveScale,
+    outputWidth: Math.max(1, Math.round(cropWidth * effectiveScale)),
+    outputHeight: Math.max(1, Math.round(cropHeight * effectiveScale)),
+    maxWidth: Math.max(1, Math.round(MAX_EDGE * cropWidth / Math.max(cropWidth, cropHeight))),
+    maxHeight: Math.max(1, Math.round(MAX_EDGE * cropHeight / Math.max(cropWidth, cropHeight))),
+  };
+}
+
+export function rotateCrop(crop: CropArea): CropArea {
+  return { unit: '%', x: Math.max(0, 100 - crop.y - crop.height), y: crop.x, width: crop.height, height: crop.width };
+}
+
 export function safeFilename(value: string): string {
   const clean = value.replace(/[\x00-\x1f\x7f/\\:*?"<>|]/g, '-').trim().replace(/(?:\.pdf)+$/i, '').replace(/[. ]+$/g, '').slice(0, 90);
   return `${clean || 'Mon document'}.pdf`;
@@ -108,15 +138,38 @@ function canvasBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('La photo n’a pas pu être préparée. Essayez une image plus petite.')), type, .9));
 }
 
-export async function renderDocument(source: HTMLCanvasElement, mode: RenderMode, rotation: number, contrast = DEFAULT_CONTRAST, signal?: AbortSignal) {
+export async function editorPreview(source: HTMLCanvasElement, rotation: number, signal?: AbortSignal) {
   signal?.throwIfAborted();
+  const geometry = imageGeometry(source.width, source.height, rotation);
   const canvas = document.createElement('canvas');
-  const quarterTurn = rotation % 180 !== 0;
-  canvas.width = quarterTurn ? source.height : source.width;
-  canvas.height = quarterTurn ? source.width : source.height;
+  const scale = Math.min(1, 1200 / Math.max(geometry.orientedWidth, geometry.orientedHeight));
+  canvas.width = Math.max(1, Math.round(geometry.orientedWidth * scale));
+  canvas.height = Math.max(1, Math.round(geometry.orientedHeight * scale));
   try {
     const context = getContext(canvas);
-    context.translate(canvas.width / 2, canvas.height / 2);
+    context.scale(canvas.width / geometry.orientedWidth, canvas.height / geometry.orientedHeight);
+    context.translate(geometry.orientedWidth / 2, geometry.orientedHeight / 2);
+    context.rotate(rotation * Math.PI / 180);
+    context.drawImage(source, -source.width / 2, -source.height / 2);
+    const blob = await canvasBlob(canvas, 'image/jpeg');
+    signal?.throwIfAborted();
+    return { blob, width: geometry.orientedWidth, height: geometry.orientedHeight };
+  } finally { canvas.width = 0; canvas.height = 0; }
+}
+
+export async function renderDocument(source: HTMLCanvasElement, mode: RenderMode, rotation: number, contrast = DEFAULT_CONTRAST, signal?: AbortSignal, edits = defaultImageEdits()) {
+  signal?.throwIfAborted();
+  const geometry = imageGeometry(source.width, source.height, rotation, edits);
+  const canvas = document.createElement('canvas');
+  canvas.width = geometry.outputWidth;
+  canvas.height = geometry.outputHeight;
+  try {
+    const context = getContext(canvas);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.scale(canvas.width / geometry.cropWidth, canvas.height / geometry.cropHeight);
+    context.translate(-geometry.cropX, -geometry.cropY);
+    context.translate(geometry.orientedWidth / 2, geometry.orientedHeight / 2);
     context.rotate(rotation * Math.PI / 180);
     context.drawImage(source, -source.width / 2, -source.height / 2);
     if (mode === 'bw') {

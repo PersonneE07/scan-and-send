@@ -2,6 +2,8 @@
 
 Application de photo vers PDF, en français. Une photo par document, rendus couleur et noir et blanc, rotation, export A4, téléchargement et partage du fichier PDF.
 
+**Rogner** ouvre un cadre ajustable au doigt, à la souris ou au clavier. La largeur ou la hauteur en pixels se règle en conservant les proportions, jusqu’à 2200 px sur le plus grand côté. **Appliquer** met à jour l’aperçu et le PDF ; **Annuler** conserve le document précédent. **Image entière** rétablit le cadre et les dimensions initiaux. Le recadrage reste modifiable à partir de la photo de travail complète et suit les rotations.
+
 En noir et blanc, le curseur **Contraste** ajuste le rendu de 0 (plus clair) à 100 (plus marqué). La valeur 50 conserve le rendu initial. Le réglage agit sur l’aperçu et le PDF ; un bouton permet de le réinitialiser. Il est conservé lors du passage couleur/noir et blanc et remis à 50 pour une nouvelle photo. Les changements rapides sont regroupés et l’enregistrement attend le dernier rendu choisi.
 
 Les photos sont décodées et transformées dans le navigateur, sans envoi au serveur. Le PDF reste en mémoire jusqu’au téléchargement ou au partage. Il n’y a pas d’historique persistant dans l’application.
@@ -30,6 +32,6 @@ La configuration Vercel est dans `vercel.json`. Le déploiement statique désact
 
 Le choix de caméra dépend du navigateur et du système. Le partage de fichiers nécessite HTTPS et la disponibilité de `navigator.canShare({ files })`. Une image HEIC est acceptée si le navigateur peut la décoder ; sinon un message propose de reprendre la photo ou d’utiliser JPEG/PNG. Les photos sont limitées à 40 Mo et leur plus grand côté de travail à 2200 px.
 
-Les tests vérifient le contenu réel d’un PDF rouvert, les couleurs, le noir et blanc sous éclairage irrégulier, la mise en page A4, les noms de fichiers et les entrées invalides. La caméra physique, le dossier final sur iPhone/Android et la messagerie nécessitent une vérification sur ces appareils ; ils n’ont pas été testés physiquement ici.
+Les tests vérifient le contenu réel d’un PDF rouvert, les couleurs, le noir et blanc sous éclairage irrégulier, le recadrage et le redimensionnement sur un véritable canvas, les quatre rotations, la mise en page A4, les noms de fichiers et les entrées invalides. La caméra physique, les gestes tactiles, le dossier final sur iPhone/Android et la messagerie nécessitent une vérification sur ces appareils ; ils n’ont pas été testés physiquement ici.
 
 Un outil WebMCP optionnel `prepare_current_pdf` est disponible si `document.modelContext` est pris en charge. Aucun contexte WebMCP compatible n’était disponible pour vérifier son contrat pendant la création ; ce point reste non vérifié.

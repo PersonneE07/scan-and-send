@@ -1,6 +1,7 @@
 "use client";
 import { useRef } from 'react';
-import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2 } from 'lucide-react';
+import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop } from 'lucide-react';
+import { ImageEditor } from '@/components/image-editor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -47,6 +48,7 @@ export default function Home() {
           </div>
           {(scan.source || scan.loading) && <div className="preview-toolbar">
             {scan.source && <>
+              <Button variant="ghost" className="tool-button" onClick={scan.openEditor} disabled={scan.busy}><Crop />Rogner</Button>
               <Button variant="ghost" className="tool-button" onClick={() => camera.current?.click()} disabled={scan.busy}><Camera />Reprendre</Button>
               <Button variant="ghost" className="tool-button" onClick={() => gallery.current?.click()} disabled={scan.busy}><RefreshCw />Remplacer</Button>
               <Button variant="ghost" className="tool-button" onClick={scan.rotate} disabled={scan.busy}><RotateCw />Tourner</Button>
@@ -95,6 +97,7 @@ export default function Home() {
       </div>
       <footer className="site-footer"><p className="local-note"><ShieldCheck aria-hidden="true" />Aucun document envoyé sur un serveur.</p><p>Une page. Tout simplement.</p></footer>
     </main>
+    {scan.editor && <ImageEditor key={scan.editor.url} image={scan.editor} onApply={scan.applyEdits} onCancel={scan.closeEditor} />}
     <Dialog open={scan.fallback} onOpenChange={scan.setFallback}>
       <DialogContent className="mail-dialog" showCloseButton={false}>
         <DialogTitle>Joindre votre PDF au mail</DialogTitle>

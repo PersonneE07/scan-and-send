@@ -74,7 +74,7 @@ test('the rendered preview and PDF contain the same adjusted black and white pix
   const canvas = {
     width: 0, height: 0,
     getContext: () => ({
-      translate() {}, rotate() {}, drawImage() {},
+      scale() {}, translate() {}, rotate() {}, drawImage() {},
       getImageData: () => ({ data: fixture.pixels.slice() }),
       putImageData: image => { renderedPixels = image.data; },
     }),
@@ -105,7 +105,7 @@ test('a superseded render stops after image encoding and releases its canvas', a
   const previousDocument = globalThis.document;
   const canvas = {
     width: 0, height: 0,
-    getContext: () => ({ translate() {}, rotate() {}, drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(4) }), putImageData() {} }),
+    getContext: () => ({ scale() {}, translate() {}, rotate() {}, drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(4) }), putImageData() {} }),
     toBlob(callback) { controller.abort(); callback(new Blob(['invalid image'])); },
   };
   globalThis.document = { createElement: () => canvas };
