@@ -35,7 +35,6 @@ export default function Home() {
       <div className="private-label" title="Les documents sont traités sur votre appareil"><ShieldCheck aria-hidden="true" /><span>Sur votre appareil, simplement.</span></div>
     </div></header>
     <main className="workspace">
-      <div className="page-intro"><div><h1>Nouveau document</h1><p>Une ou plusieurs pages, le bon rendu, et votre PDF est prêt.</p></div><div className="flow-label" aria-hidden="true">Photo <span>→</span> Rendu <span>→</span> PDF</div></div>
       <input hidden ref={camera} type="file" accept="image/*" capture="environment" onChange={event => pick(event, scan.source)} aria-label="Prendre un document en photo" />
       <input hidden ref={gallery} type="file" accept="image/*" multiple={!scan.source} onChange={event => pick(event, scan.source)} aria-label="Importer des photos" />
       <input hidden ref={addCamera} type="file" accept="image/*" capture="environment" onChange={event => pick(event)} aria-label="Photographier une page supplémentaire" />
