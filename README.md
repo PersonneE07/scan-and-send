@@ -6,6 +6,8 @@ En noir et blanc, le curseur **Contraste** ajuste le rendu de 0 (plus clair) à 
 
 Les photos sont décodées et transformées dans le navigateur, sans envoi au serveur. Le PDF reste en mémoire jusqu’au téléchargement ou au partage. Il n’y a pas d’historique persistant dans l’application.
 
+**Effacer la photo** retire immédiatement le document en cours et son aperçu PDF, annule les traitements et revient à la prise de photo. Pendant l’import initial, le même bouton porte le nom **Annuler**. Le nom du document, la rotation et le rendu retrouvent leurs valeurs initiales.
+
 ## Utilisation
 
 Prendre une photo ou importer une image, choisir le rendu et le nom, puis enregistrer le PDF. Sur iPhone, si Safari ouvre le fichier, utiliser Partager → Enregistrer dans Fichiers. Le bouton d’envoi utilise le partage natif de fichiers : choisir Mail ou Gmail et le destinataire. Si cette capacité manque, une boîte de dialogue guide le téléchargement puis l’ajout manuel de la pièce jointe. L’application ne prétend jamais qu’un fichier a été enregistré ou qu’un email a été envoyé.

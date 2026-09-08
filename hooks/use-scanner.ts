@@ -24,6 +24,7 @@ export function useScanner() {
   const generation = useRef(0);
   const pendingRender = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRender = useRef<AbortController | null>(null);
+  const activeImport = useRef<AbortController | null>(null);
   const ownedUrls = useRef<string[]>([]);
   const sharing = useRef(false);
 
@@ -58,12 +59,15 @@ export function useScanner() {
 
   const load = useCallback(async (file: File) => {
     const job = ++generation.current;
+    activeImport.current?.abort();
+    const controller = new AbortController();
+    activeImport.current = controller;
     if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
     activeRender.current?.abort();
     setLoading(true); setBusy(true); setError(''); setNotice(''); setFallback(false);
     try {
-      const normalized = await normalizePhoto(file);
-      if (job !== generation.current) { normalized.width = 0; return; }
+      const normalized = await normalizePhoto(file, controller.signal);
+      if (job !== generation.current) { normalized.width = 0; normalized.height = 0; return; }
       if (original.current) { original.current.width = 0; original.current.height = 0; }
       original.current = normalized;
       settings.current.rotation = 0;
@@ -78,7 +82,7 @@ export function useScanner() {
         setBusy(false);
         setLoading(false);
       }
-    }
+    } finally { if (activeImport.current === controller) activeImport.current = null; }
   }, [regenerate]);
 
   const setMode = useCallback((value: string) => {
@@ -112,6 +116,24 @@ export function useScanner() {
     if (pendingRender.current !== null) void regenerate();
   }, [regenerate]);
 
+  const clearPhoto = useCallback(() => {
+    // Invalidate every pending import/render before releasing the current document.
+    generation.current++;
+    if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
+    activeRender.current?.abort();
+    activeRender.current = null;
+    activeImport.current?.abort();
+    activeImport.current = null;
+    if (original.current) { original.current.width = 0; original.current.height = 0; original.current = null; }
+    for (const url of ownedUrls.current) URL.revokeObjectURL(url);
+    ownedUrls.current = [];
+    settings.current = { mode: 'bw', rotation: 0, contrast: DEFAULT_CONTRAST };
+    setPreview(''); setArtifact(null); setSource(false);
+    setBusy(false); setLoading(false); setFallback(false);
+    setModeState('bw'); setContrastState(DEFAULT_CONTRAST); setName('Mon document');
+    setError(''); setNotice('');
+  }, []);
+
   // PDF bytes are prepared before the tap so native sharing keeps user activation.
   const pdf = useMemo(() => artifact && !busy ? { url: artifact.url, file: new File([artifact.pdfBlob], safeFilename(name), { type: 'application/pdf' }) } : null, [artifact, busy, name]);
 
@@ -121,14 +143,15 @@ export function useScanner() {
 
   const share = async () => {
     if (!pdf || sharing.current) return;
+    const sharedGeneration = generation.current;
     setError(''); setNotice('');
     try {
       if (!navigator.share || !navigator.canShare?.({ files: [pdf.file] })) { setFallback(true); return; }
       sharing.current = true;
       await navigator.share({ files: [pdf.file], title: pdf.file.name });
-      setNotice('Le partage a été ouvert. Terminez l’envoi dans l’application mail choisie.');
+      if (sharedGeneration === generation.current) setNotice('Le partage a été ouvert. Terminez l’envoi dans l’application mail choisie.');
     } catch (cause) {
-      if (!(cause instanceof Error && cause.name === 'AbortError')) setFallback(true);
+      if (sharedGeneration === generation.current && !(cause instanceof Error && cause.name === 'AbortError')) setFallback(true);
     } finally { sharing.current = false; }
   };
 
@@ -173,10 +196,11 @@ export function useScanner() {
     generation.current++;
     if (pendingRender.current !== null) clearTimeout(pendingRender.current);
     activeRender.current?.abort();
+    activeImport.current?.abort();
     for (const url of ownedUrls.current) URL.revokeObjectURL(url);
     if (original.current) { original.current.width = 0; original.current.height = 0; }
   }, []);
 
   const size = artifact ? (artifact.pdfBlob.size < 1024 * 1024 ? `${Math.max(1, Math.round(artifact.pdfBlob.size / 1024))} Ko` : `${(artifact.pdfBlob.size / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`) : '';
-  return { preview, mode, setMode, contrast, setContrast, commitContrast, defaultContrast: DEFAULT_CONTRAST, name, setName, source, busy, loading, pdf, error, notice, fallback, setFallback, load, rotate, save, share, size };
+  return { preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, defaultContrast: DEFAULT_CONTRAST, name, setName, source, busy, loading, pdf, error, notice, fallback, setFallback, load, rotate, save, share, size };
 }

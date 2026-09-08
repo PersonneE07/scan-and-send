@@ -68,15 +68,19 @@ function getContext(canvas: HTMLCanvasElement) {
   return context;
 }
 
-export async function normalizePhoto(file: File): Promise<HTMLCanvasElement> {
+export async function normalizePhoto(file: File, signal?: AbortSignal): Promise<HTMLCanvasElement> {
+  signal?.throwIfAborted();
   if (!file.size) throw new Error('Cette photo est vide. Prenez une nouvelle photo.');
   if (file.size > 40 * 1024 * 1024) throw new Error('Cette photo dépasse 40 Mo. Choisissez une image plus petite.');
   if (!(file.type.startsWith('image/') || /\.(jpe?g|png|webp|heic|heif|avif|gif)$/i.test(file.name))) throw new Error('Choisissez une photo, au format JPEG, PNG ou un autre format image.');
   const url = URL.createObjectURL(file);
   const image = new Image();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   try {
     await new Promise<void>((resolve, reject) => {
+      onAbort = () => reject(signal?.reason ?? new DOMException('Import annulé.', 'AbortError'));
+      signal?.addEventListener('abort', onAbort, { once: true });
       timer = setTimeout(() => reject(new Error('La photo prend trop de temps à ouvrir. Essayez une image plus petite.')), 20000);
       image.onload = () => resolve();
       image.onerror = () => reject(new Error('Cette photo ne peut pas être ouverte ici. Reprenez-la avec l’appareil photo ou importez une image JPEG ou PNG.'));
@@ -94,6 +98,7 @@ export async function normalizePhoto(file: File): Promise<HTMLCanvasElement> {
     return canvas;
   } finally {
     clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener('abort', onAbort);
     image.onload = null; image.onerror = null; image.src = '';
     URL.revokeObjectURL(url);
   }

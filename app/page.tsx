@@ -1,6 +1,6 @@
 "use client";
 import { useRef } from 'react';
-import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight } from 'lucide-react';
+import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -12,6 +12,13 @@ export default function Home() {
   const scan = useScanner();
   const camera = useRef<HTMLInputElement>(null);
   const gallery = useRef<HTMLInputElement>(null);
+  const captureButton = useRef<HTMLButtonElement>(null);
+  const clearPhoto = () => {
+    scan.clearPhoto();
+    if (camera.current) camera.current.value = '';
+    if (gallery.current) gallery.current.value = '';
+    requestAnimationFrame(() => captureButton.current?.focus());
+  };
   const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -33,15 +40,18 @@ export default function Home() {
             {scan.preview ? <img className="scan-image" src={scan.preview} alt={`Aperçu de votre document en ${scan.mode === 'bw' ? 'noir et blanc' : 'couleur'}`} /> : <div className="empty-capture">
               <div className="capture-frame"><Camera aria-hidden="true" /></div>
               <h2>Votre document commence ici</h2><p>Posez-le à plat, dans un endroit éclairé, et cadrez la page entière.</p>
-              <Button className="action capture-button" onClick={() => camera.current?.click()} disabled={scan.busy}><Camera />Prendre une photo</Button>
+              <Button ref={captureButton} className="action capture-button" onClick={() => camera.current?.click()} disabled={scan.busy}><Camera />Prendre une photo</Button>
               <Button variant="ghost" className="action import-button" onClick={() => gallery.current?.click()} disabled={scan.busy}><ImagePlus />Importer une photo</Button>
             </div>}
             {scan.busy && <div className={scan.preview && !scan.loading ? 'preview-updating' : 'loading-overlay'} role="status"><LoaderCircle className="spin" aria-hidden="true" />{scan.preview && !scan.loading ? 'Mise à jour du rendu…' : 'Préparation de votre document…'}</div>}
           </div>
-          {scan.source && <div className="preview-toolbar">
-            <Button variant="ghost" className="tool-button" onClick={() => camera.current?.click()} disabled={scan.busy}><Camera />Reprendre</Button>
-            <Button variant="ghost" className="tool-button" onClick={() => gallery.current?.click()} disabled={scan.busy}><RefreshCw />Remplacer</Button>
-            <Button variant="ghost" className="tool-button" onClick={scan.rotate} disabled={scan.busy}><RotateCw />Tourner</Button>
+          {(scan.source || scan.loading) && <div className="preview-toolbar">
+            {scan.source && <>
+              <Button variant="ghost" className="tool-button" onClick={() => camera.current?.click()} disabled={scan.busy}><Camera />Reprendre</Button>
+              <Button variant="ghost" className="tool-button" onClick={() => gallery.current?.click()} disabled={scan.busy}><RefreshCw />Remplacer</Button>
+              <Button variant="ghost" className="tool-button" onClick={scan.rotate} disabled={scan.busy}><RotateCw />Tourner</Button>
+            </>}
+            <Button variant="ghost" className="tool-button clear-photo-button" onClick={clearPhoto}><Trash2 />{scan.loading && !scan.source ? 'Annuler' : 'Effacer la photo'}</Button>
           </div>}
           <div className="preview-bottom"><LockKeyhole aria-hidden="true" />Vos photos restent sur votre appareil.</div>
         </section>

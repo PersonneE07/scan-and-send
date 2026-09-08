@@ -183,6 +183,33 @@ test('invalid photos fail clearly before touching browser decoding', async () =>
   await assert.rejects(normalizePhoto(new File(['not an image'], 'document.pdf', { type: 'application/pdf' })), /Choisissez une photo/);
 });
 
+test('cancelling a pending photo import releases its image and Blob URL immediately', async t => {
+  const previousImage = globalThis.Image;
+  let image;
+  globalThis.Image = class {
+    constructor() { image = this; }
+    src = '';
+    onload = null;
+    onerror = null;
+  };
+  const revoke = t.mock.method(URL, 'revokeObjectURL');
+  try {
+    const controller = new AbortController();
+    const pending = normalizePhoto(new File(['pending photo'], 'photo.jpg', { type: 'image/jpeg' }), controller.signal);
+    const photoUrl = image.src;
+    assert.ok(photoUrl.startsWith('blob:'));
+    controller.abort();
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(image.src, '');
+    assert.equal(image.onload, null);
+    assert.equal(image.onerror, null);
+    assert.ok(revoke.mock.calls.some(call => call.arguments[0] === photoUrl));
+  } finally {
+    if (previousImage === undefined) delete globalThis.Image;
+    else globalThis.Image = previousImage;
+  }
+});
+
 
 test('the color JPEG path preserves the photo bytes in a landscape PDF', async () => {
   const image = await readFile(new URL('./fixtures/color.jpg', import.meta.url));
