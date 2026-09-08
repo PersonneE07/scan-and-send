@@ -4,6 +4,8 @@ Application de photo vers PDF, en français. Une photo par document, rendus coul
 
 **Rogner** ouvre un cadre ajustable au doigt, à la souris ou au clavier. La largeur ou la hauteur en pixels se règle en conservant les proportions, jusqu’à 2200 px sur le plus grand côté. **Appliquer** met à jour l’aperçu et le PDF ; **Annuler** conserve le document précédent. **Image entière** rétablit le cadre et les dimensions initiaux. Le recadrage reste modifiable à partir de la photo de travail complète et suit les rotations.
 
+Dans **Rogner → 4 coins libres**, chaque coin se place indépendamment sur la feuille, y compris en biais. Une correction de perspective redresse le quadrilatère dans l’aperçu et le PDF. Les coins se déplacent au doigt, à la souris ou avec les flèches du clavier (Maj pour accélérer). Les croisements et les cadres aplatis sont empêchés. Les dimensions sont estimées à partir des longueurs des côtés opposés ; elles restent ajustables avec les proportions conservées. Tout le traitement reste local et peut être annulé ou effacé.
+
 En noir et blanc, le curseur **Contraste** ajuste le rendu de 0 (plus clair) à 100 (plus marqué). La valeur 50 conserve le rendu initial. Le réglage agit sur l’aperçu et le PDF ; un bouton permet de le réinitialiser. Il est conservé lors du passage couleur/noir et blanc et remis à 50 pour une nouvelle photo. Les changements rapides sont regroupés et l’enregistrement attend le dernier rendu choisi.
 
 Les photos sont décodées et transformées dans le navigateur, sans envoi au serveur. Le PDF reste en mémoire jusqu’au téléchargement ou au partage. Il n’y a pas d’historique persistant dans l’application.

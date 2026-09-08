@@ -5,8 +5,10 @@ import ReactCrop from 'react-image-crop';
 import { Check, LockKeyhole, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { defaultImageEdits, imageGeometry, type CropArea, type ImageEdits } from '@/lib/document';
+import { PerspectiveCropper } from '@/components/perspective-cropper';
+import { cloneImageEdits, cropCorners, defaultImageEdits, imageGeometry, type CropArea, type CropCorners, type ImageEdits } from '@/lib/document';
 
 type Props = {
   image: { url: string; width: number; height: number; edits: ImageEdits };
@@ -16,11 +18,14 @@ type Props = {
 
 export function ImageEditor({ image, onApply, onCancel }: Props) {
   const [crop, setCrop] = useState<CropArea>({ ...image.edits.crop });
+  const [corners, setCorners] = useState<CropCorners>(() => cloneImageEdits(image.edits).corners ?? cropCorners(image.edits.crop));
+  const [cropMode, setCropMode] = useState(image.edits.corners ? 'perspective' : 'rectangle');
   const [scale, setScale] = useState(image.edits.scale);
   const [draft, setDraft] = useState<{ axis: 'width' | 'height'; text: string } | null>(null);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const geometry = imageGeometry(image.width, image.height, 0, { crop, scale });
+  const currentEdits: ImageEdits = { crop, scale, ...(cropMode === 'perspective' ? { corners } : {}) };
+  const geometry = imageGeometry(image.width, image.height, 0, currentEdits);
   const draftValue = draft ? Number(draft.text) : null;
   const draftMax = draft?.axis === 'width' ? geometry.maxWidth : geometry.maxHeight;
   const invalidSize = draft !== null && (!draft.text.trim() || !Number.isInteger(draftValue) || draftValue! < 1 || draftValue! > draftMax);
@@ -36,20 +41,24 @@ export function ImageEditor({ image, onApply, onCancel }: Props) {
 
   const reset = () => {
     const initial = defaultImageEdits();
-    setCrop(initial.crop); setScale(initial.scale); setDraft(null);
+    setCrop(initial.crop); setCorners(cropCorners(initial.crop)); setScale(initial.scale); setDraft(null);
   };
 
   return <Dialog open onOpenChange={open => { if (!open) onCancel(); }}>
     <DialogContent className="crop-dialog" showCloseButton={false}>
       <div className="crop-heading">
         <DialogTitle>Rogner et redimensionner</DialogTitle>
-        <DialogDescription>Déplacez les coins du cadre pour garder uniquement la zone souhaitée.</DialogDescription>
+        <DialogDescription>{cropMode === 'perspective' ? 'Placez les quatre coins sur les bords de la feuille. « Appliquer » redressera le document.' : 'Déplacez les coins du cadre pour garder uniquement la zone souhaitée.'}</DialogDescription>
       </div>
-      <div className="crop-stage">
-        <ReactCrop
+      <RadioGroup className="crop-mode" value={cropMode} onValueChange={value => { setCropMode(String(value)); setDraft(null); }} aria-label="Type de recadrage">
+        <label className={cropMode === 'rectangle' ? 'selected' : ''}><RadioGroupItem value="rectangle" />Rectangle</label>
+        <label className={cropMode === 'perspective' ? 'selected' : ''}><RadioGroupItem value="perspective" />4 coins libres</label>
+      </RadioGroup>
+      <div className={`crop-stage${cropMode === 'perspective' ? ' perspective-stage' : ''}`}>
+        {cropMode === 'perspective' ? <PerspectiveCropper image={image} corners={corners} onChange={next => { setCorners(next); setDraft(null); }} onLoad={() => setReady(true)} onError={() => setLoadError(true)} /> : <ReactCrop
           crop={crop}
           onChange={(_, next) => {
-            if (next.width > 0 && next.height > 0) { setCrop(next); setDraft(null); }
+            if (next.width > 0 && next.height > 0) { setCrop(next); setCorners(cropCorners(next)); setDraft(null); }
           }}
           minWidth={24}
           minHeight={24}
@@ -64,7 +73,7 @@ export function ImageEditor({ image, onApply, onCancel }: Props) {
           }}
         >
           <img src={image.url} alt="Photo à recadrer" draggable={false} onLoad={() => setReady(true)} onError={() => setLoadError(true)} />
-        </ReactCrop>
+        </ReactCrop>}
       </div>
       {loadError && <p className="feedback error" role="alert">L’aperçu ne s’est pas chargé. Annulez puis rouvrez le recadrage.</p>}
       <div className="resize-section">
@@ -77,7 +86,7 @@ export function ImageEditor({ image, onApply, onCancel }: Props) {
       </div>
       <div className="crop-actions">
         <Button variant="ghost" className="action crop-reset" onClick={reset}><RotateCcw />Image entière</Button>
-        <div><Button variant="outline" className="action" onClick={onCancel}>Annuler</Button><Button className="action" disabled={!ready || loadError || invalidSize} onClick={() => onApply({ crop: { ...crop }, scale: geometry.effectiveScale })}><Check />Appliquer</Button></div>
+        <div><Button variant="outline" className="action" onClick={onCancel}>Annuler</Button><Button className="action" disabled={!ready || loadError || invalidSize} onClick={() => onApply(cloneImageEdits({ ...currentEdits, scale: geometry.effectiveScale }))}><Check />Appliquer</Button></div>
       </div>
     </DialogContent>
   </Dialog>;

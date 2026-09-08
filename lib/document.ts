@@ -3,9 +3,30 @@ export const DEFAULT_CONTRAST = 50;
 const MAX_EDGE = 2200;
 
 export type CropArea = { unit: '%'; x: number; y: number; width: number; height: number };
-export type ImageEdits = { crop: CropArea; scale: number };
+export type CropPoint = { x: number; y: number };
+// Percent coordinates, clockwise: top left, top right, bottom right, bottom left.
+export type CropCorners = [CropPoint, CropPoint, CropPoint, CropPoint];
+export type ImageEdits = { crop: CropArea; scale: number; corners?: CropCorners };
 export function defaultImageEdits(): ImageEdits {
   return { crop: { unit: '%', x: 0, y: 0, width: 100, height: 100 }, scale: 1 };
+}
+
+export function cropCorners(crop: CropArea): CropCorners {
+  const right = Math.min(100, crop.x + crop.width), bottom = Math.min(100, crop.y + crop.height);
+  return [{ x: crop.x, y: crop.y }, { x: right, y: crop.y }, { x: right, y: bottom }, { x: crop.x, y: bottom }];
+}
+
+export function validCorners(corners: CropCorners): boolean {
+  if (corners.length !== 4 || corners.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.y < 0 || p.x > 100 || p.y > 100)) return false;
+  // Strict convexity prevents crossing edges, collapsed frames and singular transforms.
+  return corners.every((a, i) => {
+    const b = corners[(i + 1) % 4], c = corners[(i + 2) % 4];
+    return (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x) > .05;
+  });
+}
+
+export function cloneImageEdits(edits: ImageEdits): ImageEdits {
+  return { crop: { ...edits.crop }, scale: edits.scale, ...(edits.corners ? { corners: edits.corners.map(p => ({ ...p })) as CropCorners } : {}) };
 }
 
 export function imageGeometry(width: number, height: number, rotation: number, edits = defaultImageEdits()) {
@@ -16,8 +37,15 @@ export function imageGeometry(width: number, height: number, rotation: number, e
   const orientedWidth = quarterTurn ? height : width, orientedHeight = quarterTurn ? width : height;
   const cropX = Math.min(orientedWidth - 1, Math.round(orientedWidth * crop.x / 100));
   const cropY = Math.min(orientedHeight - 1, Math.round(orientedHeight * crop.y / 100));
-  const cropWidth = Math.max(1, Math.min(orientedWidth - cropX, Math.round(orientedWidth * crop.width / 100)));
-  const cropHeight = Math.max(1, Math.min(orientedHeight - cropY, Math.round(orientedHeight * crop.height / 100)));
+  let cropWidth = Math.max(1, Math.min(orientedWidth - cropX, Math.round(orientedWidth * crop.width / 100)));
+  let cropHeight = Math.max(1, Math.min(orientedHeight - cropY, Math.round(orientedHeight * crop.height / 100)));
+  if (edits.corners) {
+    if (!validCorners(edits.corners)) throw new Error('Gardez les quatre coins dans la photo, sans croiser les bords.');
+    const points = edits.corners.map(p => ({ x: p.x * orientedWidth / 100, y: p.y * orientedHeight / 100 }));
+    const edge = (a: number, b: number) => Math.hypot(points[b].x - points[a].x, points[b].y - points[a].y);
+    cropWidth = Math.max(1, Math.round(Math.max(edge(0, 1), edge(3, 2))));
+    cropHeight = Math.max(1, Math.round(Math.max(edge(0, 3), edge(1, 2))));
+  }
   const effectiveScale = Math.min(scale, MAX_EDGE / Math.max(cropWidth, cropHeight));
   return {
     orientedWidth, orientedHeight, cropX, cropY, cropWidth, cropHeight, effectiveScale,
@@ -30,6 +58,66 @@ export function imageGeometry(width: number, height: number, rotation: number, e
 
 export function rotateCrop(crop: CropArea): CropArea {
   return { unit: '%', x: Math.max(0, 100 - crop.y - crop.height), y: crop.x, width: crop.height, height: crop.width };
+}
+
+export function rotateImageEdits(edits: ImageEdits): ImageEdits {
+  const next = cloneImageEdits(edits);
+  next.crop = rotateCrop(next.crop);
+  if (next.corners) {
+    const rotated = next.corners.map(p => ({ x: 100 - p.y, y: p.x }));
+    next.corners = [rotated[3], rotated[0], rotated[1], rotated[2]];
+  }
+  return next;
+}
+
+// Homography from the unit square to a quadrilateral. Sampling this inverse map
+// visits every output pixel, so a skewed document becomes a complete rectangle.
+export function perspectiveTransform([p0, p1, p2, p3]: CropCorners) {
+  const dx1 = p1.x - p2.x, dx2 = p3.x - p2.x, dx3 = p0.x - p1.x + p2.x - p3.x;
+  const dy1 = p1.y - p2.y, dy2 = p3.y - p2.y, dy3 = p0.y - p1.y + p2.y - p3.y;
+  const determinant = dx1 * dy2 - dx2 * dy1;
+  if (Math.abs(determinant) < 1e-10) throw new Error('Ce cadre est trop aplati. Écartez les coins.');
+  const g = (dx3 * dy2 - dx2 * dy3) / determinant;
+  const h = (dx1 * dy3 - dx3 * dy1) / determinant;
+  if ([1 + g, 1 + h, 1 + g + h].some(value => !Number.isFinite(value) || value < 1e-10)) throw new Error('Ce cadre est trop aplati. Écartez les coins.');
+  return [p1.x - p0.x + g * p1.x, p3.x - p0.x + h * p3.x, p0.x,
+    p1.y - p0.y + g * p1.y, p3.y - p0.y + h * p3.y, p0.y, g, h];
+}
+
+async function drawPerspective(source: HTMLCanvasElement, canvas: HTMLCanvasElement, rotation: number, corners: CropCorners, signal?: AbortSignal) {
+  const turn = ((rotation % 360) + 360) % 360;
+  const width = source.width, height = source.height;
+  const orientedWidth = turn % 180 ? height : width, orientedHeight = turn % 180 ? width : height;
+  const points = corners.map(p => {
+    const x = p.x * orientedWidth / 100, y = p.y * orientedHeight / 100;
+    // Map boundary coordinates back to the immutable, unrotated source.
+    return turn === 90 ? { x: y, y: height - x } : turn === 180 ? { x: width - x, y: height - y } : turn === 270 ? { x: width - y, y: x } : { x, y };
+  }) as CropCorners;
+  const [a, b, c, d, e, f, g, h] = perspectiveTransform(points);
+  const input = getContext(source).getImageData(0, 0, width, height).data;
+  const context = getContext(canvas), output = context.createImageData(canvas.width, canvas.height);
+  const pixels = output.data, outputWidth = canvas.width, outputHeight = canvas.height;
+  for (let y = 0; y < outputHeight; y++) {
+    if (y % 64 === 0) {
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      signal?.throwIfAborted();
+    }
+    const v = (y + .5) / outputHeight;
+    for (let x = 0; x < outputWidth; x++) {
+      const u = (x + .5) / outputWidth, denominator = g * u + h * v + 1;
+      const sx = Math.max(0, Math.min(width - 1, (a * u + b * v + c) / denominator - .5));
+      const sy = Math.max(0, Math.min(height - 1, (d * u + e * v + f) / denominator - .5));
+      const x0 = Math.floor(sx), y0 = Math.floor(sy), x1 = Math.min(width - 1, x0 + 1), y1 = Math.min(height - 1, y0 + 1);
+      const fx = sx - x0, fy = sy - y0;
+      const p00 = (y0 * width + x0) * 4, p10 = (y0 * width + x1) * 4, p01 = (y1 * width + x0) * 4, p11 = (y1 * width + x1) * 4;
+      const target = (y * outputWidth + x) * 4;
+      for (let channel = 0; channel < 3; channel++) {
+        pixels[target + channel] = (input[p00 + channel] * (1 - fx) + input[p10 + channel] * fx) * (1 - fy) + (input[p01 + channel] * (1 - fx) + input[p11 + channel] * fx) * fy;
+      }
+      pixels[target + 3] = 255;
+    }
+  }
+  context.putImageData(output, 0, 0);
 }
 
 export function safeFilename(value: string): string {
@@ -167,11 +255,15 @@ export async function renderDocument(source: HTMLCanvasElement, mode: RenderMode
     const context = getContext(canvas);
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = 'high';
-    context.scale(canvas.width / geometry.cropWidth, canvas.height / geometry.cropHeight);
-    context.translate(-geometry.cropX, -geometry.cropY);
-    context.translate(geometry.orientedWidth / 2, geometry.orientedHeight / 2);
-    context.rotate(rotation * Math.PI / 180);
-    context.drawImage(source, -source.width / 2, -source.height / 2);
+    if (edits.corners) {
+      await drawPerspective(source, canvas, rotation, edits.corners, signal);
+    } else {
+      context.scale(canvas.width / geometry.cropWidth, canvas.height / geometry.cropHeight);
+      context.translate(-geometry.cropX, -geometry.cropY);
+      context.translate(geometry.orientedWidth / 2, geometry.orientedHeight / 2);
+      context.rotate(rotation * Math.PI / 180);
+      context.drawImage(source, -source.width / 2, -source.height / 2);
+    }
     if (mode === 'bw') {
       const image = context.getImageData(0, 0, canvas.width, canvas.height);
       blackAndWhite(image.data, canvas.width, canvas.height, contrast);

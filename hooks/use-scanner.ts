@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_CONTRAST, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateCrop, safeFilename, type ImageEdits, type RenderMode } from '@/lib/document';
+import { DEFAULT_CONTRAST, cloneImageEdits, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, type ImageEdits, type RenderMode } from '@/lib/document';
 
 type Artifact = { pdfBlob: Blob; url: string; preview: string };
 type Editor = { url: string; width: number; height: number; edits: ImageEdits; generation: number };
@@ -105,7 +105,7 @@ export function useScanner() {
   }, [regenerate]);
 
   const rotate = useCallback(() => {
-    settings.current.edits = { ...settings.current.edits, crop: rotateCrop(settings.current.edits.crop) };
+    settings.current.edits = rotateImageEdits(settings.current.edits);
     settings.current.rotation = (settings.current.rotation + 90) % 360;
     void regenerate();
   }, [regenerate]);
@@ -141,7 +141,7 @@ export function useScanner() {
       if (job !== generation.current) return;
       const url = URL.createObjectURL(image.blob);
       editorUrl.current = url;
-      setEditor({ url, width: image.width, height: image.height, edits: { ...settings.current.edits, crop: { ...settings.current.edits.crop } }, generation: job });
+      setEditor({ url, width: image.width, height: image.height, edits: cloneImageEdits(settings.current.edits), generation: job });
     } catch (cause) {
       if (job === generation.current) setError(cause instanceof Error ? cause.message : 'La photo ne peut pas être ouverte pour le recadrage.');
     } finally { if (job === generation.current) setBusy(false); }
@@ -152,7 +152,7 @@ export function useScanner() {
     if (!canvas || !editor || busy || editor.generation !== generation.current) return;
     try {
       const geometry = imageGeometry(canvas.width, canvas.height, settings.current.rotation, edits);
-      settings.current.edits = { crop: { ...edits.crop }, scale: geometry.effectiveScale };
+      settings.current.edits = cloneImageEdits({ ...edits, scale: geometry.effectiveScale });
       closeEditor();
       void regenerate();
     } catch (cause) {
