@@ -120,7 +120,7 @@ export function useScanner() {
     try {
       void Promise.resolve(context.registerTool({
         name: 'prepare_current_pdf',
-        description: 'Prepare a PDF from the photo already selected in Pochette. Set the document rendering and optional filename. The PDF becomes ready in the visible interface; this does not download, share or send it.',
+        description: 'Prepare a PDF from the photo already selected in Scan and Send. Set the document rendering and optional filename. The PDF becomes ready in the visible interface; this does not download, share or send it.',
         inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['bw', 'color'] }, name: { type: 'string', maxLength: 90 } }, required: ['mode'], additionalProperties: false },
         annotations: { readOnlyHint: false, untrustedContentHint: true },
         execute: input => prepareRef.current(input),

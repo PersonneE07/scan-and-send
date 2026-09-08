@@ -1,5 +1,5 @@
 {
-  "name": "pochette-scan",
+  "name": "scan-and-send",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:vercel": "SCAN_STATIC_EXPORT=1 vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt",

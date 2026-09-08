@@ -1,4 +1,4 @@
-# Pochette
+# Scan and Send
 
 Application de photo vers PDF, en français. Une photo par document, rendus couleur et noir et blanc, rotation, export A4, téléchargement et partage du fichier PDF.
 
@@ -15,6 +15,12 @@ Prendre une photo ou importer une image, choisir le rendu et le nom, puis enregi
 - `npm test`
 - `npx tsc --noEmit --incremental false`
 - `npm run build`
+
+## GitHub et Vercel
+
+Le dépôt est `PersonneE07/scan-and-send`. Vercel utilise `npm run build:vercel` et publie le dossier statique `dist/client`, sans serveur applicatif ni clé API. Le nom affiché dans l’application et dans les propriétés des PDF est **Scan and Send**.
+
+La configuration Vercel est dans `vercel.json`. Le déploiement statique désactive uniquement pour cette compilation les adaptateurs d’hébergement Workers ; le développement local reste disponible avec `npm run dev`.
 
 ## Compatibilité et vérification
 

@@ -48,7 +48,7 @@ export async function createPdf(imageBytes: Uint8Array, format: 'png' | 'jpg', w
   const { PDFDocument } = await import('pdf-lib');
   const pdf = await PDFDocument.create();
   pdf.setTitle('Document numérisé');
-  pdf.setCreator('Pochette');
+  pdf.setCreator('Scan and Send');
   pdf.setLanguage('fr-FR');
   const image = format === 'png' ? await pdf.embedPng(imageBytes) : await pdf.embedJpg(imageBytes);
   const placement = a4Placement(width, height);

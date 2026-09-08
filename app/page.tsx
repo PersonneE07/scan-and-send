@@ -18,7 +18,7 @@ export default function Home() {
   };
   return <>
     <header className="site-header"><div className="header-inner">
-      <div className="brand"><ScanLine className="brand-icon" aria-hidden="true" /><span>pochette<span className="brand-dot">.</span></span></div>
+      <div className="brand"><ScanLine className="brand-icon" aria-hidden="true" /><span>Scan <span className="brand-dot">and</span> Send</span></div>
       <div className="private-label" title="Les documents sont traités sur votre appareil"><ShieldCheck aria-hidden="true" /><span>Sur votre appareil, simplement.</span></div>
     </div></header>
     <main className="workspace">
