@@ -1,4 +1,5 @@
 export type RenderMode = 'bw' | 'color';
+export const DEFAULT_CONTRAST = 50;
 const MAX_EDGE = 2200;
 
 export function safeFilename(value: string): string {
@@ -6,8 +7,10 @@ export function safeFilename(value: string): string {
   return `${clean || 'Mon document'}.pdf`;
 }
 
-export function blackAndWhite(pixels: Uint8ClampedArray, width: number, height: number): void {
+export function blackAndWhite(pixels: Uint8ClampedArray, width: number, height: number, contrast = DEFAULT_CONTRAST): void {
   if (pixels.length !== width * height * 4 || width < 1 || height < 1) throw new Error('Dimensions invalides.');
+  if (!Number.isFinite(contrast) || contrast < 0 || contrast > 100) throw new Error('Le contraste doit être compris entre 0 et 100.');
+  const adjustment = (contrast - DEFAULT_CONTRAST) / 50;
   const gray = new Uint8Array(width * height);
   const stride = width + 1;
   const integral = new Uint32Array(stride * (height + 1));
@@ -28,7 +31,9 @@ export function blackAndWhite(pixels: Uint8ClampedArray, width: number, height: 
       const left = Math.max(0, x - radius), right = Math.min(width, x + radius + 1);
       const mean = (integral[bottom * stride + right] - integral[top * stride + right] - integral[bottom * stride + left] + integral[top * stride + left]) / ((bottom - top) * (right - left));
       const n = y * width + x;
-      const value = gray[n] < Math.min(225, mean - 10) || gray[n] < 35 ? 0 : 255;
+      // Adjust faint-stroke sensitivity before binarizing; 50 preserves the original rendering.
+      const threshold = Math.min(225 + 20 * adjustment, mean - (10 - 8 * adjustment));
+      const value = gray[n] < threshold || gray[n] < 35 + 15 * adjustment ? 0 : 255;
       pixels[n * 4] = pixels[n * 4 + 1] = pixels[n * 4 + 2] = value;
       pixels[n * 4 + 3] = 255;
     }
@@ -98,7 +103,8 @@ function canvasBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('La photo n’a pas pu être préparée. Essayez une image plus petite.')), type, .9));
 }
 
-export async function renderDocument(source: HTMLCanvasElement, mode: RenderMode, rotation: number) {
+export async function renderDocument(source: HTMLCanvasElement, mode: RenderMode, rotation: number, contrast = DEFAULT_CONTRAST, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const canvas = document.createElement('canvas');
   const quarterTurn = rotation % 180 !== 0;
   canvas.width = quarterTurn ? source.height : source.width;
@@ -110,11 +116,15 @@ export async function renderDocument(source: HTMLCanvasElement, mode: RenderMode
     context.drawImage(source, -source.width / 2, -source.height / 2);
     if (mode === 'bw') {
       const image = context.getImageData(0, 0, canvas.width, canvas.height);
-      blackAndWhite(image.data, canvas.width, canvas.height);
+      blackAndWhite(image.data, canvas.width, canvas.height, contrast);
       context.putImageData(image, 0, 0);
     }
     const previewBlob = await canvasBlob(canvas, mode === 'bw' ? 'image/png' : 'image/jpeg');
-    const bytes = await createPdf(new Uint8Array(await previewBlob.arrayBuffer()), mode === 'bw' ? 'png' : 'jpg', canvas.width, canvas.height);
+    signal?.throwIfAborted();
+    const encodedImage = new Uint8Array(await previewBlob.arrayBuffer());
+    signal?.throwIfAborted();
+    const bytes = await createPdf(encodedImage, mode === 'bw' ? 'png' : 'jpg', canvas.width, canvas.height);
+    signal?.throwIfAborted();
     const pdfBlob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
     return { previewBlob, pdfBlob };
   } finally { canvas.width = 0; canvas.height = 0; }

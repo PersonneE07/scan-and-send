@@ -4,6 +4,7 @@ import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Downlo
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog';
 import { useScanner } from '@/hooks/use-scanner';
 
@@ -35,7 +36,7 @@ export default function Home() {
               <Button className="action capture-button" onClick={() => camera.current?.click()} disabled={scan.busy}><Camera />Prendre une photo</Button>
               <Button variant="ghost" className="action import-button" onClick={() => gallery.current?.click()} disabled={scan.busy}><ImagePlus />Importer une photo</Button>
             </div>}
-            {scan.busy && <div className="loading-overlay" role="status"><LoaderCircle className="spin" aria-hidden="true" />Préparation de votre document…</div>}
+            {scan.busy && <div className={scan.preview && !scan.loading ? 'preview-updating' : 'loading-overlay'} role="status"><LoaderCircle className="spin" aria-hidden="true" />{scan.preview && !scan.loading ? 'Mise à jour du rendu…' : 'Préparation de votre document…'}</div>}
           </div>
           {scan.source && <div className="preview-toolbar">
             <Button variant="ghost" className="tool-button" onClick={() => camera.current?.click()} disabled={scan.busy}><Camera />Reprendre</Button>
@@ -51,6 +52,20 @@ export default function Home() {
               <label className={`render-choice ${scan.mode === 'bw' ? 'selected' : ''}`}><span className="sample-type" aria-hidden="true">Aa</span><span className="choice-label">Noir et blanc<RadioGroupItem value="bw" aria-label="Noir et blanc" /></span></label>
               <label className={`render-choice ${scan.mode === 'color' ? 'selected' : ''}`}><span className="sample-type color" aria-hidden="true">A<i>a</i></span><span className="choice-label">Couleur<RadioGroupItem value="color" aria-label="Couleur" /></span></label>
             </RadioGroup>
+            {scan.mode === 'bw' && <div className="contrast-control">
+              <div className="contrast-heading"><span id="contrast-label">Contraste</span><output aria-label="Valeur du contraste">{scan.contrast} %</output></div>
+              <Slider
+                className="contrast-slider"
+                aria-labelledby="contrast-label"
+                value={[scan.contrast]}
+                min={0} max={100} step={1}
+                disabled={!scan.source || scan.loading}
+                onValueChange={value => scan.setContrast(Array.isArray(value) ? value[0] : value)}
+                onValueCommitted={scan.commitContrast}
+              />
+              <div className="contrast-scale" aria-hidden="true"><span>Plus clair</span><span>Plus marqué</span></div>
+              <div className="contrast-footnote"><span>Ajustez la lisibilité du texte.</span><Button variant="ghost" className="contrast-reset" disabled={!scan.source || scan.loading || scan.contrast === scan.defaultContrast} onClick={() => scan.setContrast(scan.defaultContrast)}>Réinitialiser</Button></div>
+            </div>}
           </div>
           <div className="settings-section">
             <h2 className="section-heading"><span className="step-num">02</span>Enregistrer votre PDF</h2>

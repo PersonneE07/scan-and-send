@@ -1,9 +1,10 @@
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { deflateSync, inflateSync } from 'node:zlib';
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
-import { a4Placement, blackAndWhite, createPdf, normalizePhoto, safeFilename } from '../lib/document.ts';
+import { a4Placement, blackAndWhite, createPdf, normalizePhoto, renderDocument, safeFilename } from '../lib/document.ts';
 
 function crc32(bytes) {
   let value = 0xffffffff;
@@ -28,6 +29,94 @@ function png(width, height, pixels) {
 function imageStreams(pdf) {
   return pdf.context.enumerateIndirectObjects().map(([, value]) => value).filter(value => value instanceof PDFRawStream && value.dict.get(PDFName.of('Subtype'))?.toString() === '/Image');
 }
+
+function faintDocument() {
+  const width = 160, height = 70, pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const shade = 175 + Math.floor(x * .4);
+    pixels.set([shade, shade, shade, 255], (y * width + x) * 4);
+  }
+  [4, 8, 12, 16, 24, 80, 150].forEach((difference, index) => {
+    const x = 20 + index * 20, shade = 175 + Math.floor(x * .4) - difference;
+    for (let y = 12; y < 58; y++) pixels.set([shade, shade, shade, 255], (y * width + x) * 4);
+  });
+  return { width, height, pixels };
+}
+
+test('default contrast preserves the previous scan and higher contrast reveals faint strokes', () => {
+  const { width, height, pixels } = faintDocument();
+  const variants = [0, 50, 100].map(contrast => {
+    const output = pixels.slice(); blackAndWhite(output, width, height, contrast); return output;
+  });
+  // Golden output captured from the previous published algorithm, before adding contrast.
+  assert.equal(createHash('sha256').update(variants[1]).digest('hex'), '8e9d82fc24e111f55b58219913bfc511629d4b276dffb20b2648be8afba27ef7');
+  const counts = variants.map(output => Array.from(output).filter((value, index) => index % 4 === 0 && value === 0).length);
+  assert.ok(counts[0] < counts[1] && counts[1] < counts[2], `Faint strokes must become visible: ${counts}`);
+  for (let index = 0; index < pixels.length; index += 4) {
+    assert.ok(variants[0][index] >= variants[1][index] && variants[1][index] >= variants[2][index]);
+  }
+  for (const output of variants) assert.equal(output[(30 * width + 10) * 4], 255, 'Paper background remains white');
+});
+
+test('contrast limits keep uniform paper white and reject invalid values', () => {
+  for (const contrast of [0, 50, 100]) {
+    const pixels = new Uint8ClampedArray(40 * 40 * 4).fill(255);
+    blackAndWhite(pixels, 40, 40, contrast);
+    assert.ok(pixels.every(value => value === 255));
+  }
+  for (const contrast of [-1, 101, NaN, Infinity]) assert.throws(() => blackAndWhite(new Uint8ClampedArray(4), 1, 1, contrast), /contraste/);
+});
+
+test('the rendered preview and PDF contain the same adjusted black and white pixels', async () => {
+  const fixture = faintDocument();
+  const previousDocument = globalThis.document;
+  let renderedPixels;
+  const canvas = {
+    width: 0, height: 0,
+    getContext: () => ({
+      translate() {}, rotate() {}, drawImage() {},
+      getImageData: () => ({ data: fixture.pixels.slice() }),
+      putImageData: image => { renderedPixels = image.data; },
+    }),
+    toBlob(callback) { callback(new Blob([png(this.width, this.height, renderedPixels)], { type: 'image/png' })); },
+  };
+  globalThis.document = { createElement: () => canvas };
+  try {
+    const pdfPixels = [];
+    for (const contrast of [0, 100]) {
+      const result = await renderDocument(fixture, 'bw', 0, contrast);
+      const previewBytes = Buffer.from(await result.previewBlob.arrayBuffer());
+      assert.deepEqual(previewBytes, png(fixture.width, fixture.height, renderedPixels));
+      const pdf = await PDFDocument.load(await result.pdfBlob.arrayBuffer());
+      const rgb = inflateSync(imageStreams(pdf)[0].getContents());
+      assert.deepEqual(rgb, Buffer.from(Array.from(renderedPixels).filter((_, index) => index % 4 !== 3)));
+      pdfPixels.push(rgb);
+      assert.equal(canvas.width, 0, 'Processing canvas is released');
+    }
+    assert.notDeepEqual(pdfPixels[0], pdfPixels[1], 'The saved PDF must reflect the selected contrast');
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+});
+
+test('a superseded render stops after image encoding and releases its canvas', async () => {
+  const controller = new AbortController();
+  const previousDocument = globalThis.document;
+  const canvas = {
+    width: 0, height: 0,
+    getContext: () => ({ translate() {}, rotate() {}, drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(4) }), putImageData() {} }),
+    toBlob(callback) { controller.abort(); callback(new Blob(['invalid image'])); },
+  };
+  globalThis.document = { createElement: () => canvas };
+  try {
+    await assert.rejects(renderDocument({ width: 1, height: 1 }, 'bw', 0, 50, controller.signal), { name: 'AbortError' });
+    assert.equal(canvas.width, 0);
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+});
 
 test('download filenames remain usable and have one PDF extension', () => {
   assert.equal(safeFilename('  Facture été.pdf.pdf  '), 'Facture été.pdf');

@@ -2,6 +2,8 @@
 
 Application de photo vers PDF, en français. Une photo par document, rendus couleur et noir et blanc, rotation, export A4, téléchargement et partage du fichier PDF.
 
+En noir et blanc, le curseur **Contraste** ajuste le rendu de 0 (plus clair) à 100 (plus marqué). La valeur 50 conserve le rendu initial. Le réglage agit sur l’aperçu et le PDF ; un bouton permet de le réinitialiser. Il est conservé lors du passage couleur/noir et blanc et remis à 50 pour une nouvelle photo. Les changements rapides sont regroupés et l’enregistrement attend le dernier rendu choisi.
+
 Les photos sont décodées et transformées dans le navigateur, sans envoi au serveur. Le PDF reste en mémoire jusqu’au téléchargement ou au partage. Il n’y a pas d’historique persistant dans l’application.
 
 ## Utilisation

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { normalizePhoto, renderDocument, safeFilename, type RenderMode } from '@/lib/document';
+import { DEFAULT_CONTRAST, normalizePhoto, renderDocument, safeFilename, type RenderMode } from '@/lib/document';
 
 type Artifact = { pdfBlob: Blob; url: string; preview: string };
 type WebTool = { name: string; description: string; inputSchema: object; annotations: { readOnlyHint: boolean; untrustedContentHint: boolean }; execute: (input: unknown) => unknown };
@@ -10,28 +10,37 @@ const nextPaint = () => new Promise<void>(resolve => requestAnimationFrame(() =>
 export function useScanner() {
   const [preview, setPreview] = useState('');
   const [mode, setModeState] = useState<RenderMode>('bw');
+  const [contrast, setContrastState] = useState(DEFAULT_CONTRAST);
   const [name, setName] = useState('Mon document');
   const [source, setSource] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [fallback, setFallback] = useState(false);
   const original = useRef<HTMLCanvasElement | null>(null);
-  const settings = useRef({ mode: 'bw' as RenderMode, rotation: 0 });
+  const settings = useRef({ mode: 'bw' as RenderMode, rotation: 0, contrast: DEFAULT_CONTRAST });
   const generation = useRef(0);
+  const pendingRender = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRender = useRef<AbortController | null>(null);
   const ownedUrls = useRef<string[]>([]);
   const sharing = useRef(false);
 
   const regenerate = useCallback(async () => {
+    if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
     const canvas = original.current;
     if (!canvas) return null;
     const job = ++generation.current;
+    activeRender.current?.abort();
+    const controller = new AbortController();
+    activeRender.current = controller;
+    const snapshot = { ...settings.current };
     setBusy(true); setArtifact(null); setError(''); setNotice('');
     try {
       await nextPaint();
       if (job !== generation.current) return null;
-      const result = await renderDocument(canvas, settings.current.mode, settings.current.rotation);
+      const result = await renderDocument(canvas, snapshot.mode, snapshot.rotation, snapshot.contrast, controller.signal);
       if (job !== generation.current) return null;
       const next = { pdfBlob: result.pdfBlob, url: URL.createObjectURL(result.pdfBlob), preview: URL.createObjectURL(result.previewBlob) };
       for (const url of ownedUrls.current) URL.revokeObjectURL(url);
@@ -49,19 +58,25 @@ export function useScanner() {
 
   const load = useCallback(async (file: File) => {
     const job = ++generation.current;
-    setBusy(true); setError(''); setNotice(''); setFallback(false);
+    if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
+    activeRender.current?.abort();
+    setLoading(true); setBusy(true); setError(''); setNotice(''); setFallback(false);
     try {
       const normalized = await normalizePhoto(file);
       if (job !== generation.current) { normalized.width = 0; return; }
       if (original.current) { original.current.width = 0; original.current.height = 0; }
       original.current = normalized;
       settings.current.rotation = 0;
+      settings.current.contrast = DEFAULT_CONTRAST;
+      setContrastState(DEFAULT_CONTRAST);
+      setLoading(false);
       setSource(true);
       await regenerate();
     } catch (cause) {
       if (job === generation.current) {
         setError(cause instanceof Error ? cause.message : 'Cette photo ne peut pas être ouverte. Essayez une autre image.');
         setBusy(false);
+        setLoading(false);
       }
     }
   }, [regenerate]);
@@ -76,6 +91,25 @@ export function useScanner() {
   const rotate = useCallback(() => {
     settings.current.rotation = (settings.current.rotation + 90) % 360;
     void regenerate();
+  }, [regenerate]);
+
+  const setContrast = useCallback((value: number) => {
+    if (!Number.isFinite(value) || loading || settings.current.mode !== 'bw') return;
+    const next = Math.max(0, Math.min(100, Math.round(value)));
+    if (settings.current.contrast === next) return;
+    settings.current.contrast = next;
+    setContrastState(next);
+    if (!original.current) return;
+    // Disable stale exports immediately, while coalescing touch/keyboard changes.
+    generation.current++;
+    activeRender.current?.abort();
+    setBusy(true); setArtifact(null); setError(''); setNotice('');
+    if (pendingRender.current !== null) clearTimeout(pendingRender.current);
+    pendingRender.current = setTimeout(() => { void regenerate(); }, 180);
+  }, [loading, regenerate]);
+
+  const commitContrast = useCallback(() => {
+    if (pendingRender.current !== null) void regenerate();
   }, [regenerate]);
 
   // PDF bytes are prepared before the tap so native sharing keeps user activation.
@@ -101,14 +135,20 @@ export function useScanner() {
   const prepare = async (input: unknown) => {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Options invalides.');
     const options = input as Record<string, unknown>;
-    if (Object.keys(options).some(key => !['mode', 'name'].includes(key)) || (options.mode !== 'bw' && options.mode !== 'color') || (options.name !== undefined && (typeof options.name !== 'string' || options.name.length > 90))) throw new Error('Utilisez mode: bw ou color, et un nom de 90 caractères maximum.');
+    if (Object.keys(options).some(key => !['mode', 'name', 'contrast'].includes(key)) || (options.mode !== 'bw' && options.mode !== 'color') || (options.name !== undefined && (typeof options.name !== 'string' || options.name.length > 90)) || (options.contrast !== undefined && (typeof options.contrast !== 'number' || !Number.isInteger(options.contrast) || options.contrast < 0 || options.contrast > 100))) throw new Error('Utilisez mode: bw ou color, un contraste entier de 0 à 100 et un nom de 90 caractères maximum.');
     if (!original.current || busy) throw new Error('Importez une photo et attendez la fin du traitement.');
     const filename = typeof options.name === 'string' ? options.name : name;
     setName(filename); setModeState(options.mode);
     settings.current.mode = options.mode;
+    if (typeof options.contrast === 'number') {
+      settings.current.contrast = Math.round(options.contrast);
+      setContrastState(settings.current.contrast);
+    }
     const result = await regenerate();
     if (!result) throw new Error('Le PDF n’a pas pu être créé.');
+    const completedGeneration = generation.current;
     await nextPaint();
+    if (completedGeneration !== generation.current) throw new Error('Le rendu a changé. Attendez la fin du traitement avant de préparer le PDF.');
     return { status: 'ready', filename: safeFilename(filename), pages: 1, bytes: result.pdfBlob.size };
   };
   const prepareRef = useRef(prepare);
@@ -121,7 +161,7 @@ export function useScanner() {
       void Promise.resolve(context.registerTool({
         name: 'prepare_current_pdf',
         description: 'Prepare a PDF from the photo already selected in Scan and Send. Set the document rendering and optional filename. The PDF becomes ready in the visible interface; this does not download, share or send it.',
-        inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['bw', 'color'] }, name: { type: 'string', maxLength: 90 } }, required: ['mode'], additionalProperties: false },
+        inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['bw', 'color'] }, name: { type: 'string', maxLength: 90 }, contrast: { type: 'integer', minimum: 0, maximum: 100, description: 'Black and white contrast; 50 is the default. Ignored for color rendering.' } }, required: ['mode'], additionalProperties: false },
         annotations: { readOnlyHint: false, untrustedContentHint: true },
         execute: input => prepareRef.current(input),
       }, { signal: lifecycle.signal })).catch(() => { /* Optional browser capability. */ });
@@ -131,10 +171,12 @@ export function useScanner() {
 
   useEffect(() => () => {
     generation.current++;
+    if (pendingRender.current !== null) clearTimeout(pendingRender.current);
+    activeRender.current?.abort();
     for (const url of ownedUrls.current) URL.revokeObjectURL(url);
     if (original.current) { original.current.width = 0; original.current.height = 0; }
   }, []);
 
   const size = artifact ? (artifact.pdfBlob.size < 1024 * 1024 ? `${Math.max(1, Math.round(artifact.pdfBlob.size / 1024))} Ko` : `${(artifact.pdfBlob.size / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`) : '';
-  return { preview, mode, setMode, name, setName, source, busy, pdf, error, notice, fallback, setFallback, load, rotate, save, share, size };
+  return { preview, mode, setMode, contrast, setContrast, commitContrast, defaultContrast: DEFAULT_CONTRAST, name, setName, source, busy, loading, pdf, error, notice, fallback, setFallback, load, rotate, save, share, size };
 }
