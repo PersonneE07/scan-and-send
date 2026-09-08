@@ -1,19 +1,25 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_CONTRAST, cloneImageEdits, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, type ImageEdits, type RenderMode } from '@/lib/document';
+import { DEFAULT_CONTRAST, cloneImageEdits, combinePages, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, snapshotPhoto, type ImageEdits, type RenderMode } from '@/lib/document';
 
-type Artifact = { pdfBlob: Blob; url: string; preview: string };
+type Settings = { mode: RenderMode; rotation: number; contrast: number; edits: ImageEdits };
+type ScanPage = { id: number; photo: Blob; settings: Settings; pdfBlob: Blob | null; preview: string };
+type Artifact = { pdfBlob: Blob; url: string };
 type Editor = { url: string; width: number; height: number; edits: ImageEdits; generation: number };
 type WebTool = { name: string; description: string; inputSchema: object; annotations: { readOnlyHint: boolean; untrustedContentHint: boolean }; execute: (input: unknown) => unknown };
 type ModelDocument = Document & { modelContext?: { registerTool: (tool: WebTool, options: { signal: AbortSignal }) => void | Promise<void> } };
 const nextPaint = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+const newSettings = (mode: RenderMode = 'bw'): Settings => ({ mode, rotation: 0, contrast: DEFAULT_CONTRAST, edits: defaultImageEdits() });
+const copySettings = (settings: Settings): Settings => ({ ...settings, edits: cloneImageEdits(settings.edits) });
+const release = (canvas: HTMLCanvasElement | null) => { if (canvas) { canvas.width = 0; canvas.height = 0; } };
 
 export function useScanner() {
   const [preview, setPreview] = useState('');
   const [mode, setModeState] = useState<RenderMode>('bw');
   const [contrast, setContrastState] = useState(DEFAULT_CONTRAST);
   const [name, setName] = useState('Mon document');
-  const [source, setSource] = useState(false);
+  const [pages, setPages] = useState<{ id: number; preview: string }[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
@@ -21,16 +27,20 @@ export function useScanner() {
   const [notice, setNotice] = useState('');
   const [fallback, setFallback] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const pagesRef = useRef<ScanPage[]>([]);
+  const activeId = useRef<number | null>(null);
+  const nextId = useRef(0);
   const original = useRef<HTMLCanvasElement | null>(null);
-  const settings = useRef({ mode: 'bw' as RenderMode, rotation: 0, contrast: DEFAULT_CONTRAST, edits: defaultImageEdits() });
+  const settings = useRef<Settings>(newSettings());
   const generation = useRef(0);
   const pendingRender = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRender = useRef<AbortController | null>(null);
   const activeImport = useRef<AbortController | null>(null);
   const activeEditor = useRef<AbortController | null>(null);
   const editorUrl = useRef<string | null>(null);
-  const ownedUrls = useRef<string[]>([]);
+  const documentUrl = useRef<string | null>(null);
   const sharing = useRef(false);
+  const syncPages = useCallback(() => setPages(pagesRef.current.map(page => ({ id: page.id, preview: page.preview }))), []);
 
   const closeEditor = useCallback(() => {
     activeEditor.current?.abort(); activeEditor.current = null;
@@ -38,70 +48,122 @@ export function useScanner() {
     setEditor(null);
   }, []);
 
+  const cancelWork = useCallback(() => {
+    generation.current++;
+    if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
+    activeRender.current?.abort(); activeRender.current = null;
+    activeImport.current?.abort(); activeImport.current = null;
+    closeEditor();
+    setBusy(false); setLoading(false); setError(''); setNotice(''); setFallback(false);
+  }, [closeEditor]);
+
+  const publish = useCallback(async (job: number, signal: AbortSignal) => {
+    const current = [...pagesRef.current];
+    const missing = current.findIndex(page => !page.pdfBlob);
+    if (missing !== -1) throw new Error(`La page ${missing + 1} doit être préparée. Sélectionnez-la pour réessayer.`);
+    const pdfBlob = await combinePages(current.map(page => page.pdfBlob!), signal);
+    if (job !== generation.current) return null;
+    const url = URL.createObjectURL(pdfBlob);
+    if (documentUrl.current) URL.revokeObjectURL(documentUrl.current);
+    documentUrl.current = url;
+    const next = { pdfBlob, url }; setArtifact(next); return next;
+  }, []);
+
   const regenerate = useCallback(async () => {
     if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
-    const canvas = original.current;
-    if (!canvas) return null;
+    const canvas = original.current, page = pagesRef.current.find(page => page.id === activeId.current);
+    if (!canvas || !page) return null;
     const job = ++generation.current;
     activeRender.current?.abort();
-    const controller = new AbortController();
-    activeRender.current = controller;
-    const snapshot = { ...settings.current };
+    const controller = new AbortController(); activeRender.current = controller;
+    const snapshot = copySettings(settings.current);
+    page.settings = snapshot; page.pdfBlob = null;
     setBusy(true); setArtifact(null); setError(''); setNotice('');
     try {
-      await nextPaint();
+      await nextPaint(); controller.signal.throwIfAborted();
       if (job !== generation.current) return null;
       const result = await renderDocument(canvas, snapshot.mode, snapshot.rotation, snapshot.contrast, controller.signal, snapshot.edits);
       if (job !== generation.current) return null;
-      const next = { pdfBlob: result.pdfBlob, url: URL.createObjectURL(result.pdfBlob), preview: URL.createObjectURL(result.previewBlob) };
-      for (const url of ownedUrls.current) URL.revokeObjectURL(url);
-      ownedUrls.current = [next.url, next.preview];
-      setArtifact(next); setPreview(next.preview);
-      return next;
+      const url = URL.createObjectURL(result.previewBlob);
+      URL.revokeObjectURL(page.preview);
+      page.preview = url; page.pdfBlob = result.pdfBlob;
+      setPreview(url); syncPages();
+      return await publish(job, controller.signal);
     } catch (cause) {
-      if (job === generation.current) {
-        setPreview('');
-        setError(cause instanceof Error ? cause.message : 'Le document n’a pas pu être créé. Essayez une autre photo.');
-      }
+      if (job === generation.current) setError(cause instanceof Error ? cause.message : 'Le document n’a pas pu être créé. Réessayez sur cette page.');
       return null;
     } finally { if (job === generation.current) setBusy(false); }
-  }, []);
+  }, [publish, syncPages]);
 
-  const load = useCallback(async (file: File) => {
-    const job = ++generation.current;
-    closeEditor();
-    activeImport.current?.abort();
-    const controller = new AbortController();
+  const loadFiles = useCallback(async (files: File[], replaceCurrent = false) => {
+    if (!files.length) return;
+    cancelWork();
+    const job = generation.current, controller = new AbortController();
     activeImport.current = controller;
-    if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
-    activeRender.current?.abort();
-    setLoading(true); setBusy(true); setError(''); setNotice(''); setFallback(false);
+    const replacingId = replaceCurrent ? activeId.current : null;
+    const staged: { page: ScanPage; previewBlob: Blob }[] = [];
+    let workingCanvas: HTMLCanvasElement | null = null;
+    setLoading(true); setBusy(true);
     try {
-      const normalized = await normalizePhoto(file, controller.signal);
-      if (job !== generation.current) { normalized.width = 0; normalized.height = 0; return; }
-      if (original.current) { original.current.width = 0; original.current.height = 0; }
-      original.current = normalized;
-      settings.current.rotation = 0;
-      settings.current.contrast = DEFAULT_CONTRAST;
-      settings.current.edits = defaultImageEdits();
-      setContrastState(DEFAULT_CONTRAST);
-      setLoading(false);
-      setSource(true);
+      for (const file of replaceCurrent ? files.slice(0, 1) : files) {
+        release(workingCanvas); workingCanvas = null;
+        workingCanvas = await normalizePhoto(file, controller.signal);
+        const photo = await snapshotPhoto(workingCanvas, controller.signal);
+        const next = newSettings(settings.current.mode);
+        const result = await renderDocument(workingCanvas, next.mode, 0, next.contrast, controller.signal, next.edits);
+        controller.signal.throwIfAborted();
+        staged.push({ page: { id: ++nextId.current, photo, settings: next, pdfBlob: result.pdfBlob, preview: '' }, previewBlob: result.previewBlob });
+      }
+      if (job !== generation.current) return;
+      const additions = staged.map(item => ({ ...item.page, preview: URL.createObjectURL(item.previewBlob) }));
+      const replaceIndex = pagesRef.current.findIndex(page => page.id === replacingId);
+      if (replaceIndex !== -1) {
+        URL.revokeObjectURL(pagesRef.current[replaceIndex].preview);
+        pagesRef.current = pagesRef.current.map((page, index) => index === replaceIndex ? additions[0] : page);
+      } else pagesRef.current = [...pagesRef.current, ...additions];
+      const selected = additions[additions.length - 1];
+      release(original.current); original.current = workingCanvas; workingCanvas = null;
+      activeId.current = selected.id; settings.current = copySettings(selected.settings);
+      setSelectedId(selected.id); setPreview(selected.preview); setModeState(selected.settings.mode); setContrastState(selected.settings.contrast);
+      syncPages(); setLoading(false); setArtifact(null);
+      activeImport.current = null; activeRender.current = controller;
+      await publish(job, controller.signal);
+    } catch (cause) {
+      if (job === generation.current) setError(cause instanceof Error ? cause.message : 'Ces pages ne peuvent pas être ajoutées. Réessayez.');
+    } finally {
+      release(workingCanvas);
+      if (activeImport.current === controller) activeImport.current = null;
+      if (job === generation.current) { setLoading(false); setBusy(false); }
+    }
+  }, [cancelWork, publish, syncPages]);
+
+  const selectPage = useCallback(async (id: number) => {
+    const page = pagesRef.current.find(page => page.id === id);
+    if (!page) return;
+    cancelWork();
+    const job = generation.current, controller = new AbortController();
+    activeImport.current = controller; setBusy(true); setLoading(true);
+    let canvas: HTMLCanvasElement | null = null;
+    try {
+      canvas = await normalizePhoto(new File([page.photo], 'page.png', { type: 'image/png' }), controller.signal);
+      controller.signal.throwIfAborted();
+      if (job !== generation.current) return;
+      release(original.current); original.current = canvas; canvas = null;
+      activeId.current = id; settings.current = copySettings(page.settings);
+      setSelectedId(id); setPreview(page.preview); setModeState(page.settings.mode); setContrastState(page.settings.contrast);
+      setLoading(false); activeImport.current = null;
       await regenerate();
     } catch (cause) {
-      if (job === generation.current) {
-        setError(cause instanceof Error ? cause.message : 'Cette photo ne peut pas être ouverte. Essayez une autre image.');
-        setBusy(false);
-        setLoading(false);
-      }
-    } finally { if (activeImport.current === controller) activeImport.current = null; }
-  }, [closeEditor, regenerate]);
+      if (job === generation.current) { setError(cause instanceof Error ? cause.message : 'Cette page ne peut pas être ouverte.'); setBusy(false); setLoading(false); }
+    } finally {
+      release(canvas);
+      if (activeImport.current === controller) activeImport.current = null;
+    }
+  }, [cancelWork, regenerate]);
 
   const setMode = useCallback((value: string) => {
     if (value !== 'bw' && value !== 'color') return;
-    settings.current.mode = value;
-    setModeState(value);
-    void regenerate();
+    settings.current.mode = value; setModeState(value); void regenerate();
   }, [regenerate]);
 
   const rotate = useCallback(() => {
@@ -114,33 +176,25 @@ export function useScanner() {
     if (!Number.isFinite(value) || loading || settings.current.mode !== 'bw') return;
     const next = Math.max(0, Math.min(100, Math.round(value)));
     if (settings.current.contrast === next) return;
-    settings.current.contrast = next;
-    setContrastState(next);
+    settings.current.contrast = next; setContrastState(next);
     if (!original.current) return;
-    // Disable stale exports immediately, while coalescing touch/keyboard changes.
-    generation.current++;
-    activeRender.current?.abort();
+    generation.current++; activeRender.current?.abort();
     setBusy(true); setArtifact(null); setError(''); setNotice('');
     if (pendingRender.current !== null) clearTimeout(pendingRender.current);
     pendingRender.current = setTimeout(() => { void regenerate(); }, 180);
   }, [loading, regenerate]);
 
-  const commitContrast = useCallback(() => {
-    if (pendingRender.current !== null) void regenerate();
-  }, [regenerate]);
+  const commitContrast = useCallback(() => { if (pendingRender.current !== null) void regenerate(); }, [regenerate]);
 
   const openEditor = useCallback(async () => {
     const canvas = original.current;
     if (!canvas || busy || editor) return;
-    const job = ++generation.current;
-    const controller = new AbortController();
-    activeEditor.current = controller;
-    setBusy(true); setError('');
+    const job = ++generation.current, controller = new AbortController();
+    activeEditor.current = controller; setBusy(true); setError('');
     try {
       const image = await editorPreview(canvas, settings.current.rotation, controller.signal);
       if (job !== generation.current) return;
-      const url = URL.createObjectURL(image.blob);
-      editorUrl.current = url;
+      const url = URL.createObjectURL(image.blob); editorUrl.current = url;
       setEditor({ url, width: image.width, height: image.height, edits: cloneImageEdits(settings.current.edits), generation: job });
     } catch (cause) {
       if (job === generation.current) setError(cause instanceof Error ? cause.message : 'La photo ne peut pas être ouverte pour le recadrage.');
@@ -153,31 +207,26 @@ export function useScanner() {
     try {
       const geometry = imageGeometry(canvas.width, canvas.height, settings.current.rotation, edits);
       settings.current.edits = cloneImageEdits({ ...edits, scale: geometry.effectiveScale });
-      closeEditor();
-      void regenerate();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Choisissez un cadre valide.');
-    }
+      closeEditor(); void regenerate();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Choisissez un cadre valide.'); }
   }, [busy, closeEditor, editor, regenerate]);
 
   const clearPhoto = useCallback(() => {
-    // Invalidate every pending import/render before releasing the current document.
-    generation.current++;
-    closeEditor();
-    if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
-    activeRender.current?.abort();
-    activeRender.current = null;
-    activeImport.current?.abort();
-    activeImport.current = null;
-    if (original.current) { original.current.width = 0; original.current.height = 0; original.current = null; }
-    for (const url of ownedUrls.current) URL.revokeObjectURL(url);
-    ownedUrls.current = [];
-    settings.current = { mode: 'bw', rotation: 0, contrast: DEFAULT_CONTRAST, edits: defaultImageEdits() };
-    setPreview(''); setArtifact(null); setSource(false);
-    setBusy(false); setLoading(false); setFallback(false);
-    setModeState('bw'); setContrastState(DEFAULT_CONTRAST); setName('Mon document');
-    setError(''); setNotice('');
-  }, [closeEditor]);
+    // Cancelling an import keeps the existing document, including all its pages.
+    if (activeImport.current) { cancelWork(); return; }
+    cancelWork();
+    const index = pagesRef.current.findIndex(page => page.id === activeId.current);
+    if (index !== -1) URL.revokeObjectURL(pagesRef.current[index].preview);
+    pagesRef.current = pagesRef.current.filter(page => page.id !== activeId.current);
+    release(original.current); original.current = null;
+    activeId.current = null; setSelectedId(null); setPreview(''); setArtifact(null); syncPages();
+    if (pagesRef.current.length) {
+      void selectPage(pagesRef.current[Math.min(Math.max(index, 0), pagesRef.current.length - 1)].id);
+    } else {
+      if (documentUrl.current) { URL.revokeObjectURL(documentUrl.current); documentUrl.current = null; }
+      settings.current = newSettings(); setModeState('bw'); setContrastState(DEFAULT_CONTRAST); setName('Mon document');
+    }
+  }, [cancelWork, selectPage, syncPages]);
 
   // PDF bytes are prepared before the tap so native sharing keeps user activation.
   const pdf = useMemo(() => artifact && !busy ? { url: artifact.url, file: new File([artifact.pdfBlob], safeFilename(name), { type: 'application/pdf' }) } : null, [artifact, busy, name]);
@@ -218,7 +267,7 @@ export function useScanner() {
     const completedGeneration = generation.current;
     await nextPaint();
     if (completedGeneration !== generation.current) throw new Error('Le rendu a changé. Attendez la fin du traitement avant de préparer le PDF.');
-    return { status: 'ready', filename: safeFilename(filename), pages: 1, bytes: result.pdfBlob.size };
+    return { status: 'ready', filename: safeFilename(filename), pages: pagesRef.current.length, bytes: result.pdfBlob.size };
   };
   const prepareRef = useRef(prepare);
   useEffect(() => { prepareRef.current = prepare; });
@@ -229,7 +278,7 @@ export function useScanner() {
     try {
       void Promise.resolve(context.registerTool({
         name: 'prepare_current_pdf',
-        description: 'Prepare a PDF from the photo already selected in Scan and Send. Set the document rendering and optional filename. The PDF becomes ready in the visible interface; this does not download, share or send it.',
+        description: 'Prepare one PDF from all pages in Scan and Send. Set the selected page rendering and optional document filename. The PDF becomes ready in the visible interface; this does not download, share or send it.',
         inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['bw', 'color'] }, name: { type: 'string', maxLength: 90 }, contrast: { type: 'integer', minimum: 0, maximum: 100, description: 'Black and white contrast; 50 is the default. Ignored for color rendering.' } }, required: ['mode'], additionalProperties: false },
         annotations: { readOnlyHint: false, untrustedContentHint: true },
         execute: input => prepareRef.current(input),
@@ -245,10 +294,11 @@ export function useScanner() {
     activeImport.current?.abort();
     activeEditor.current?.abort();
     if (editorUrl.current) URL.revokeObjectURL(editorUrl.current);
-    for (const url of ownedUrls.current) URL.revokeObjectURL(url);
+    for (const page of pagesRef.current) URL.revokeObjectURL(page.preview);
+    if (documentUrl.current) URL.revokeObjectURL(documentUrl.current);
     if (original.current) { original.current.width = 0; original.current.height = 0; }
   }, []);
 
   const size = artifact ? (artifact.pdfBlob.size < 1024 * 1024 ? `${Math.max(1, Math.round(artifact.pdfBlob.size / 1024))} Ko` : `${(artifact.pdfBlob.size / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`) : '';
-  return { preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, editor, openEditor, closeEditor, applyEdits, defaultContrast: DEFAULT_CONTRAST, name, setName, source, busy, loading, pdf, error, notice, fallback, setFallback, load, rotate, save, share, size };
+  return { pages, activeIndex: pages.findIndex(page => page.id === selectedId), source: pages.length > 0, preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, editor, openEditor, closeEditor, applyEdits, defaultContrast: DEFAULT_CONTRAST, name, setName, busy, loading, pdf, error, notice, fallback, setFallback, loadFiles, selectPage, rotate, save, share, size };
 }

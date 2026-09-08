@@ -1,6 +1,6 @@
 "use client";
-import { useRef } from 'react';
-import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop, Plus } from 'lucide-react';
 import { ImageEditor } from '@/components/image-editor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,9 @@ export default function Home() {
   const scan = useScanner();
   const camera = useRef<HTMLInputElement>(null);
   const gallery = useRef<HTMLInputElement>(null);
+  const addCamera = useRef<HTMLInputElement>(null);
+  const addGallery = useRef<HTMLInputElement>(null);
+  const [adding, setAdding] = useState(false);
   const captureButton = useRef<HTMLButtonElement>(null);
   const clearPhoto = () => {
     scan.clearPhoto();
@@ -20,10 +23,10 @@ export default function Home() {
     if (gallery.current) gallery.current.value = '';
     requestAnimationFrame(() => captureButton.current?.focus());
   };
-  const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const pick = (event: React.ChangeEvent<HTMLInputElement>, replace = false) => {
+    const files = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (file) void scan.load(file);
+    if (files.length) void scan.loadFiles(files, replace);
   };
   return <>
     <header className="site-header"><div className="header-inner">
@@ -31,12 +34,14 @@ export default function Home() {
       <div className="private-label" title="Les documents sont traités sur votre appareil"><ShieldCheck aria-hidden="true" /><span>Sur votre appareil, simplement.</span></div>
     </div></header>
     <main className="workspace">
-      <div className="page-intro"><div><h1>Nouveau document</h1><p>Une photo, le bon rendu, et votre PDF est prêt.</p></div><div className="flow-label" aria-hidden="true">Photo <span>→</span> Rendu <span>→</span> PDF</div></div>
-      <input hidden ref={camera} type="file" accept="image/*" capture="environment" onChange={pick} aria-label="Prendre un document en photo" />
-      <input hidden ref={gallery} type="file" accept="image/*" onChange={pick} aria-label="Importer une photo" />
+      <div className="page-intro"><div><h1>Nouveau document</h1><p>Une ou plusieurs pages, le bon rendu, et votre PDF est prêt.</p></div><div className="flow-label" aria-hidden="true">Photo <span>→</span> Rendu <span>→</span> PDF</div></div>
+      <input hidden ref={camera} type="file" accept="image/*" capture="environment" onChange={event => pick(event, scan.source)} aria-label="Prendre un document en photo" />
+      <input hidden ref={gallery} type="file" accept="image/*" multiple={!scan.source} onChange={event => pick(event, scan.source)} aria-label="Importer des photos" />
+      <input hidden ref={addCamera} type="file" accept="image/*" capture="environment" onChange={event => pick(event)} aria-label="Photographier une page supplémentaire" />
+      <input hidden ref={addGallery} type="file" accept="image/*" multiple onChange={event => pick(event)} aria-label="Ajouter des photos au document" />
       <div className="work-grid">
         <section className="preview-panel" aria-label="Aperçu du document">
-          <div className="panel-top"><strong>Aperçu</strong><span className="page-label"><FileText aria-hidden="true" />{scan.source ? '1 page' : 'Aucune photo'}</span></div>
+          <div className="panel-top"><strong>Aperçu</strong><span className="page-label"><FileText aria-hidden="true" />{scan.source ? `Page ${Math.max(0, scan.activeIndex) + 1} / ${scan.pages.length}` : 'Aucune photo'}</span></div>
           <div className="preview-surface" aria-busy={scan.busy}>
             {scan.preview ? <img className="scan-image" src={scan.preview} alt={`Aperçu de votre document en ${scan.mode === 'bw' ? 'noir et blanc' : 'couleur'}`} /> : <div className="empty-capture">
               <div className="capture-frame"><Camera aria-hidden="true" /></div>
@@ -53,7 +58,11 @@ export default function Home() {
               <Button variant="ghost" className="tool-button" onClick={() => gallery.current?.click()} disabled={scan.busy}><RefreshCw />Remplacer</Button>
               <Button variant="ghost" className="tool-button" onClick={scan.rotate} disabled={scan.busy}><RotateCw />Tourner</Button>
             </>}
-            <Button variant="ghost" className="tool-button clear-photo-button" onClick={clearPhoto} aria-label={scan.loading && !scan.source ? 'Annuler l’import' : 'Effacer la photo'}><Trash2 />{scan.loading && !scan.source ? 'Annuler' : 'Effacer'}</Button>
+            <Button variant="ghost" className="tool-button clear-photo-button" onClick={clearPhoto} aria-label={scan.loading ? 'Annuler l’import' : 'Effacer la page sélectionnée'}><Trash2 />{scan.loading ? 'Annuler' : 'Effacer'}</Button>
+          </div>}
+          {scan.source && <div className="document-pages">
+            {scan.pages.length > 1 && <div className="page-picker" aria-label="Pages du document">{scan.pages.map((page, index) => <Button key={page.id} variant="ghost" className={index === scan.activeIndex ? 'page-chip selected' : 'page-chip'} aria-pressed={index === scan.activeIndex} disabled={scan.busy} onClick={() => void scan.selectPage(page.id)}>Page {index + 1}</Button>)}</div>}
+            <Button variant="outline" className="add-page" disabled={scan.busy} onClick={() => setAdding(true)}><Plus />Ajouter une page</Button>
           </div>}
           <div className="preview-bottom"><LockKeyhole aria-hidden="true" />Vos photos restent sur votre appareil.</div>
         </section>
@@ -84,7 +93,7 @@ export default function Home() {
             <h2 className="section-heading"><span className="step-num">02</span>Enregistrer votre PDF</h2>
             <label className="field-label" htmlFor="filename">Nom du document</label>
             <div className="filename-field"><Input id="filename" value={scan.name} onChange={event => scan.setName(event.target.value)} maxLength={90} autoComplete="off" spellCheck={false} /><span>.pdf</span></div>
-            <div className="pdf-summary"><span>{scan.pdf ? `1 page · ${scan.size}` : 'Format PDF · A4'}</span>{scan.pdf ? <span className="status-ready"><Check />Prêt à enregistrer</span> : <span>{scan.busy ? 'Préparation…' : 'En attente de photo'}</span>}</div>
+            <div className="pdf-summary"><span>{scan.pdf ? `${scan.pages.length} page${scan.pages.length > 1 ? 's' : ''} · ${scan.size}` : 'Format PDF · A4'}</span>{scan.pdf ? <span className="status-ready"><Check />Prêt à enregistrer</span> : <span>{scan.busy ? 'Préparation…' : scan.source ? 'À préparer' : 'En attente de photo'}</span>}</div>
             <div className="export-actions">
               {scan.pdf ? <a className="action" href={scan.pdf.url} download={scan.pdf.file.name} onClick={scan.save}><Download />Enregistrer le PDF</a> : <Button className="action" disabled><Download />Enregistrer le PDF</Button>}
               <Button variant="outline" className="action" disabled={!scan.pdf || scan.busy} onClick={scan.share}><Mail />Envoyer par mail</Button>
@@ -96,9 +105,20 @@ export default function Home() {
           {scan.notice && <p className="feedback" role="status">{scan.notice}</p>}
         </section>
       </div>
-      <footer className="site-footer"><p className="local-note"><ShieldCheck aria-hidden="true" />Aucun document envoyé sur un serveur.</p><p>Une page. Tout simplement.</p></footer>
+      <footer className="site-footer"><p className="local-note"><ShieldCheck aria-hidden="true" />Aucun document envoyé sur un serveur.</p><p>Vos pages, un seul PDF.</p></footer>
     </main>
     {scan.editor && <ImageEditor key={scan.editor.url} image={scan.editor} onApply={scan.applyEdits} onCancel={scan.closeEditor} />}
+    <Dialog open={adding} onOpenChange={setAdding}>
+      <DialogContent className="mail-dialog" showCloseButton={false}>
+        <DialogTitle>Ajouter une page</DialogTitle>
+        <DialogDescription>Les nouvelles pages seront ajoutées à la suite, dans le même PDF.</DialogDescription>
+        <div className="dialog-actions">
+          <Button className="action" onClick={() => { setAdding(false); addCamera.current?.click(); }}><Camera />Prendre une photo</Button>
+          <Button variant="outline" className="action" onClick={() => { setAdding(false); addGallery.current?.click(); }}><ImagePlus />Importer des photos</Button>
+          <DialogClose render={<Button variant="ghost" className="action" />}>Annuler</DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
     <Dialog open={scan.fallback} onOpenChange={scan.setFallback}>
       <DialogContent className="mail-dialog" showCloseButton={false}>
         <DialogTitle>Joindre votre PDF au mail</DialogTitle>

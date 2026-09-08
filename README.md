@@ -1,6 +1,8 @@
 # Scan and Send
 
-Application de photo vers PDF, en français. Une photo par document, rendus couleur et noir et blanc, rotation, export A4, téléchargement et partage du fichier PDF.
+Application de photo vers PDF, en français. Une ou plusieurs photos par document, rendus couleur et noir et blanc, rotation, export A4, téléchargement et partage du fichier PDF.
+
+**Ajouter une page** permet de prendre une autre photo ou d’importer plusieurs images dans le même PDF. Les boutons **Page 1, Page 2…** sélectionnent la page à modifier. Chaque page conserve son rendu, son contraste, sa rotation et son recadrage. **Reprendre** et **Remplacer** changent seulement la page sélectionnée, à sa position actuelle. L’export et le partage contiennent toutes les pages dans l’ordre d’ajout. Un import multiple échoué ou annulé conserve le document précédent sans ajouter de pages partielles.
 
 **Rogner** ouvre un cadre ajustable au doigt, à la souris ou au clavier. La largeur ou la hauteur en pixels se règle en conservant les proportions, jusqu’à 2200 px sur le plus grand côté. **Appliquer** met à jour l’aperçu et le PDF ; **Annuler** conserve le document précédent. **Image entière** rétablit le cadre et les dimensions initiaux. Le recadrage reste modifiable à partir de la photo de travail complète et suit les rotations.
 
@@ -10,7 +12,7 @@ En noir et blanc, le curseur **Contraste** ajuste le rendu de 0 (plus clair) à 
 
 Les photos sont décodées et transformées dans le navigateur, sans envoi au serveur. Le PDF reste en mémoire jusqu’au téléchargement ou au partage. Il n’y a pas d’historique persistant dans l’application.
 
-**Effacer la photo** retire immédiatement le document en cours et son aperçu PDF, annule les traitements et revient à la prise de photo. Pendant l’import initial, le même bouton porte le nom **Annuler**. Le nom du document, la rotation et le rendu retrouvent leurs valeurs initiales.
+**Effacer** retire la page sélectionnée et met à jour le PDF. Retirer la dernière page revient à la prise de photo et réinitialise le document. Pendant un import, **Annuler** interrompt l’ajout ou le remplacement sans retirer les pages existantes. Seule la page active reste décodée en canvas ; les autres originaux de travail sont conservés sous forme de blobs PNG en mémoire, sans stockage persistant ni envoi au serveur.
 
 ## Utilisation
 
@@ -34,6 +36,6 @@ La configuration Vercel est dans `vercel.json`. Le déploiement statique désact
 
 Le choix de caméra dépend du navigateur et du système. Le partage de fichiers nécessite HTTPS et la disponibilité de `navigator.canShare({ files })`. Une image HEIC est acceptée si le navigateur peut la décoder ; sinon un message propose de reprendre la photo ou d’utiliser JPEG/PNG. Les photos sont limitées à 40 Mo et leur plus grand côté de travail à 2200 px.
 
-Les tests vérifient le contenu réel d’un PDF rouvert, les couleurs, le noir et blanc sous éclairage irrégulier, le recadrage et le redimensionnement sur un véritable canvas, les quatre rotations, la mise en page A4, les noms de fichiers et les entrées invalides. La caméra physique, les gestes tactiles, le dossier final sur iPhone/Android et la messagerie nécessitent une vérification sur ces appareils ; ils n’ont pas été testés physiquement ici.
+Les tests vérifient le contenu réel d’un PDF rouvert, les couleurs, le noir et blanc sous éclairage irrégulier, le recadrage et le redimensionnement sur un véritable canvas, les quatre rotations, la mise en page A4, les noms de fichiers et les entrées invalides. Des tests du hook vérifient l’ordre des pages, les réglages individuels, le remplacement, la suppression, l’annulation des imports, la libération des URLs et le fichier complet transmis au partage natif simulé. La caméra physique, les gestes tactiles, le dossier final sur iPhone/Android et la messagerie nécessitent une vérification sur ces appareils ; ils n’ont pas été testés physiquement ici.
 
 Un outil WebMCP optionnel `prepare_current_pdf` est disponible si `document.modelContext` est pris en charge. Aucun contexte WebMCP compatible n’était disponible pour vérifier son contrat pendant la création ; ce point reste non vérifié.

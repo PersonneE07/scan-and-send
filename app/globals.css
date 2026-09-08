@@ -64,6 +64,11 @@ h1 { margin: 0; font-size: clamp(28px, 3vw, 36px); letter-spacing: -1.25px; line
 .preview-toolbar .tool-button svg { width: 15px; height: 15px; }
 .clear-photo-button { color: #b22f40; grid-column: span 2; }
 .clear-photo-button:hover { background: #fff0f1; color: #982237; }
+.document-pages { display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 10px; background: white; }
+.page-picker { display: flex; gap: 5px; overflow-x: auto; padding: 3px; }
+.page-picker .page-chip { flex-shrink: 0; min-height: 36px; padding: 6px 10px; font-size: 13px; }
+.page-picker .page-chip.selected { color: var(--primary); background: #edf2ff; box-shadow: inset 0 0 0 1px #b7c9fb; }
+.document-pages .add-page { min-height: 38px; height: auto; font-size: 14px; border-radius: 9px; }
 .loading-overlay { position: absolute; inset: 0; background: #e9edf3d9; display: flex; gap: 10px; justify-content: center; align-items: center; color: #2343a5; font-size: 15px; }
 .preview-updating { position: absolute; bottom: 18px; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 20px; background: #fff; box-shadow: 0 2px 12px #17203115; color: #2343a5; font-size: 14px; }
 .preview-updating svg { width: 16px; height: 16px; }

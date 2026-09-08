@@ -226,6 +226,31 @@ function canvasBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('La photo n’a pas pu être préparée. Essayez une image plus petite.')), type, .9));
 }
 
+export async function snapshotPhoto(canvas: HTMLCanvasElement, signal?: AbortSignal): Promise<Blob> {
+  signal?.throwIfAborted();
+  const blob = await canvasBlob(canvas, 'image/png');
+  signal?.throwIfAborted();
+  return blob;
+}
+
+export async function combinePages(pages: Blob[], signal?: AbortSignal): Promise<Blob> {
+  signal?.throwIfAborted();
+  if (!pages.length) throw new Error('Ajoutez au moins une page.');
+  const { PDFDocument } = await import('pdf-lib');
+  const document = await PDFDocument.create();
+  document.setTitle('Document numérisé'); document.setCreator('Scan and Send'); document.setLanguage('fr-FR');
+  for (const blob of pages) {
+    signal?.throwIfAborted();
+    const source = await PDFDocument.load(await blob.arrayBuffer());
+    const copied = await document.copyPages(source, source.getPageIndices());
+    signal?.throwIfAborted();
+    for (const page of copied) document.addPage(page);
+  }
+  const bytes = await document.save();
+  signal?.throwIfAborted();
+  return new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
+}
+
 export async function editorPreview(source: HTMLCanvasElement, rotation: number, signal?: AbortSignal) {
   signal?.throwIfAborted();
   const geometry = imageGeometry(source.width, source.height, rotation);
