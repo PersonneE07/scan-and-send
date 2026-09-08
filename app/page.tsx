@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog';
+import { safeFilename } from '@/lib/document';
 import { useScanner } from '@/hooks/use-scanner';
 
 export default function Home() {
@@ -130,7 +131,7 @@ export default function Home() {
         <ol><li>Enregistrez le PDF dans vos fichiers.</li><li>Ouvrez votre messagerie, ajoutez le destinataire et joignez le PDF.</li></ol>
         <div className="dialog-actions">
           {scan.pdf && <a className="action download" href={scan.pdf.url} download={scan.pdf.file.name} onClick={scan.save}><Download />Enregistrer le PDF</a>}
-          <a className="action email" href={`mailto:?subject=${encodeURIComponent(scan.name || 'Mon document')}&body=${encodeURIComponent('Bonjour,\n\nVous trouverez mon document en pièce jointe.\n\nBonne journée.')}`}><Mail />Ouvrir ma messagerie</a>
+          <a className="action email" href={`mailto:?subject=${encodeURIComponent(safeFilename(scan.name).slice(0, -4))}&body=${encodeURIComponent('Bonjour,\n\nVous trouverez mon document en pièce jointe.\n\nBonne journée.')}`}><Mail />Ouvrir ma messagerie</a>
           <DialogClose render={<Button variant="ghost" className="action" />}>Fermer</DialogClose>
         </div>
       </DialogContent>

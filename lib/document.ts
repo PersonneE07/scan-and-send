@@ -1,5 +1,6 @@
 export type RenderMode = 'bw' | 'color';
 export const DEFAULT_CONTRAST = 50;
+export const MAX_PAGES = 20;
 const MAX_EDGE = 2200;
 
 export type CropArea = { unit: '%'; x: number; y: number; width: number; height: number };
@@ -121,7 +122,7 @@ async function drawPerspective(source: HTMLCanvasElement, canvas: HTMLCanvasElem
 }
 
 export function safeFilename(value: string): string {
-  const clean = value.replace(/[\x00-\x1f\x7f/\\:*?"<>|]/g, '-').trim().replace(/(?:\.pdf)+$/i, '').replace(/[. ]+$/g, '').slice(0, 90);
+  const clean = value.replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069/\\:*?"<>|]/g, '-').trim().replace(/(?:\.pdf)+$/i, '').replace(/[. ]+$/g, '').slice(0, 90);
   return `${clean || 'Mon document'}.pdf`;
 }
 
@@ -190,8 +191,24 @@ export async function normalizePhoto(file: File, signal?: AbortSignal): Promise<
   signal?.throwIfAborted();
   if (!file.size) throw new Error('Cette photo est vide. Prenez une nouvelle photo.');
   if (file.size > 40 * 1024 * 1024) throw new Error('Cette photo dépasse 40 Mo. Choisissez une image plus petite.');
-  if (!(file.type.startsWith('image/') || /\.(jpe?g|png|webp|heic|heif|avif|gif)$/i.test(file.name))) throw new Error('Choisissez une photo, au format JPEG, PNG ou un autre format image.');
-  const url = URL.createObjectURL(file);
+  // Check raster signatures, never trust an extension or a supplied MIME type.
+  const header = new Uint8Array(await file.slice(0, 256).arrayBuffer());
+  signal?.throwIfAborted();
+  const text = (start: number, end: number) => String.fromCharCode(...header.slice(start, end));
+  let mime = '';
+  if (header[0] === 255 && header[1] === 216 && header[2] === 255) mime = 'image/jpeg';
+  else if (header.slice(0, 8).join(',') === '137,80,78,71,13,10,26,10') mime = 'image/png';
+  else if (['GIF87a', 'GIF89a'].includes(text(0, 6))) mime = 'image/gif';
+  else if (text(0, 4) === 'RIFF' && text(8, 12) === 'WEBP') mime = 'image/webp';
+  else if (text(4, 8) === 'ftyp') {
+    const brands = [text(8, 12)];
+    const boxSize = new DataView(header.buffer).getUint32(0);
+    for (let offset = 16; offset + 4 <= Math.min(boxSize, header.length); offset += 4) brands.push(text(offset, offset + 4));
+    if (brands.some(brand => ['avif', 'avis'].includes(brand))) mime = 'image/avif';
+    else if (brands.some(brand => ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand))) mime = 'image/heif';
+  }
+  if (!mime) throw new Error('Choisissez une photo JPEG, PNG, WebP, GIF, HEIC ou AVIF.');
+  const url = URL.createObjectURL(file.slice(0, file.size, mime));
   const image = new Image();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
@@ -205,6 +222,7 @@ export async function normalizePhoto(file: File, signal?: AbortSignal): Promise<
       image.src = url;
     });
     if (!image.naturalWidth || !image.naturalHeight) throw new Error('Cette image est illisible. Choisissez une autre photo.');
+    if (image.naturalWidth * image.naturalHeight > 80_000_000) throw new Error('Cette photo dépasse 80 mégapixels. Choisissez une image plus petite.');
     const scale = Math.min(1, MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));

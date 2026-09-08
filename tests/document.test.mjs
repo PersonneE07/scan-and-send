@@ -195,7 +195,8 @@ test('cancelling a pending photo import releases its image and Blob URL immediat
   const revoke = t.mock.method(URL, 'revokeObjectURL');
   try {
     const controller = new AbortController();
-    const pending = normalizePhoto(new File(['pending photo'], 'photo.jpg', { type: 'image/jpeg' }), controller.signal);
+    const pending = normalizePhoto(new File([new Uint8Array([255, 216, 255])], 'photo.jpg', { type: 'image/jpeg' }), controller.signal);
+    await new Promise(resolve => setTimeout(resolve, 0));
     const photoUrl = image.src;
     assert.ok(photoUrl.startsWith('blob:'));
     controller.abort();
@@ -222,4 +223,42 @@ test('the color JPEG path preserves the photo bytes in a landscape PDF', async (
   assert.equal(streams.length, 1);
   assert.equal(streams[0].dict.get(PDFName.of('Filter')).toString(), '/DCTDecode');
   assert.deepEqual(Buffer.from(streams[0].getContents()), image);
+});
+
+
+test('disguised SVG and HTML are rejected before any browser decoding', async () => {
+  for (const content of ['<svg xmlns="http://www.w3.org/2000/svg"></svg>', '<html><script>alert(1)</script></html>']) {
+    for (const type of ['image/jpeg', 'image/svg+xml', '']) {
+      await assert.rejects(normalizePhoto(new File([content], 'photo.jpg', { type })), /Choisissez une photo/);
+    }
+  }
+  assert.equal(safeFilename('facture\u202Egpj'), 'facture-gpj.pdf');
+  assert.equal(safeFilename('facture\r\nBcc:exemple'), 'facture--Bcc-exemple.pdf');
+});
+
+test('abort during signature reading never creates a browser image', async () => {
+  const controller = new AbortController();
+  const pending = normalizePhoto(new File([new Uint8Array([255, 216, 255])], 'photo.jpg'), controller.signal);
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
+});
+
+test('oversized decoded photos are released before allocating the processing canvas', async t => {
+  const previousImage = globalThis.Image;
+  let image;
+  globalThis.Image = class {
+    constructor() { image = this; }
+    naturalWidth = 10000;
+    naturalHeight = 10000;
+    set src(value) { if (value) queueMicrotask(() => this.onload?.()); }
+  };
+  const revoke = t.mock.method(URL, 'revokeObjectURL');
+  try {
+    await assert.rejects(normalizePhoto(new File([new Uint8Array([255, 216, 255])], 'large.jpg')), /80 mégapixels/);
+    assert.equal(image.onload, null);
+    assert.equal(revoke.mock.callCount(), 1);
+  } finally {
+    if (previousImage === undefined) delete globalThis.Image;
+    else globalThis.Image = previousImage;
+  }
 });

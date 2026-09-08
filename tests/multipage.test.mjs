@@ -155,3 +155,17 @@ test('combining pages rejects an empty document and respects cancellation', asyn
   const controller = new AbortController(); controller.abort();
   await assert.rejects(combinePages([new Blob() ], controller.signal), { name: 'AbortError' });
 });
+
+
+test('oversized page batches are rejected without modifying the current PDF', async t => {
+  const h = await harness(t);
+  await h.run(api => api.loadFiles([photo('red')]));
+  const before = h.api.pdf.file;
+  await h.run(api => api.loadFiles(Array.from({ length: 20 }, () => photo('blue'))));
+  assert.match(h.api.error, /20 pages/);
+  assert.equal(h.api.pages.length, 1);
+  assert.equal(h.api.pdf.file, before);
+  await h.run(api => api.loadFiles([{ size: 101 * 1024 * 1024 }]));
+  assert.match(h.api.error, /100 Mo/);
+  assert.equal(h.api.pdf.file, before);
+});

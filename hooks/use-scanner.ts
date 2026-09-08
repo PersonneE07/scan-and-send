@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_CONTRAST, cloneImageEdits, combinePages, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, snapshotPhoto, type ImageEdits, type RenderMode } from '@/lib/document';
+import { MAX_PAGES, DEFAULT_CONTRAST, cloneImageEdits, combinePages, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, snapshotPhoto, type ImageEdits, type RenderMode } from '@/lib/document';
 
 type Settings = { mode: RenderMode; rotation: number; contrast: number; edits: ImageEdits };
 type ScanPage = { id: number; photo: Blob; settings: Settings; pdfBlob: Blob | null; preview: string };
@@ -97,11 +97,20 @@ export function useScanner() {
 
   const loadFiles = useCallback(async (files: File[], replaceCurrent = false) => {
     if (!files.length) return;
+    const incoming = replaceCurrent ? files.slice(0, 1) : files;
+    const retained = pagesRef.current.filter(page => !replaceCurrent || page.id !== activeId.current);
+    if (retained.length + incoming.length > MAX_PAGES) {
+      setError(`Un document peut contenir au maximum ${MAX_PAGES} pages.`); return;
+    }
+    if (incoming.reduce((total, file) => total + file.size, 0) > 100 * 1024 * 1024) {
+      setError('Cet import dépasse 100 Mo. Ajoutez moins de photos à la fois.'); return;
+    }
     cancelWork();
     const job = generation.current, controller = new AbortController();
     activeImport.current = controller;
     const replacingId = replaceCurrent ? activeId.current : null;
     const staged: { page: ScanPage; previewBlob: Blob }[] = [];
+    let storedBytes = retained.reduce((total, page) => total + page.photo.size + 2 * (page.pdfBlob?.size ?? 0), 0);
     let workingCanvas: HTMLCanvasElement | null = null;
     setLoading(true); setBusy(true);
     try {
@@ -112,6 +121,8 @@ export function useScanner() {
         const next = newSettings(settings.current.mode);
         const result = await renderDocument(workingCanvas, next.mode, 0, next.contrast, controller.signal, next.edits);
         controller.signal.throwIfAborted();
+        storedBytes += photo.size + result.pdfBlob.size + result.previewBlob.size;
+        if (storedBytes > 100 * 1024 * 1024) throw new Error('Ce document est trop volumineux. Enregistrez-le puis créez un autre PDF.');
         staged.push({ page: { id: ++nextId.current, photo, settings: next, pdfBlob: result.pdfBlob, preview: '' }, previewBlob: result.previewBlob });
       }
       if (job !== generation.current) return;
