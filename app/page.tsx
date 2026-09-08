@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { Camera, ImagePlus, ScanLine, ShieldCheck, LockKeyhole, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop, Plus } from 'lucide-react';
 import { ImageEditor } from '@/components/image-editor';
+import { ShareApp } from '@/components/share-app';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -105,7 +106,7 @@ export default function Home() {
           {scan.notice && <p className="feedback" role="status">{scan.notice}</p>}
         </section>
       </div>
-      <footer className="site-footer"><p className="local-note"><ShieldCheck aria-hidden="true" />Aucun document envoyé sur un serveur.</p><p>Vos pages, un seul PDF.</p></footer>
+      <footer className="site-footer"><p className="local-note"><ShieldCheck aria-hidden="true" />Aucun document envoyé sur un serveur.</p><ShareApp /></footer>
     </main>
     {scan.editor && <ImageEditor key={scan.editor.url} image={scan.editor} onApply={scan.applyEdits} onCancel={scan.closeEditor} />}
     <Dialog open={adding} onOpenChange={setAdding}>
