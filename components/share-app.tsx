@@ -1,4 +1,5 @@
 "use client";
+import { usePreferences } from '@/components/preferences';
 
 import { useRef, useState } from 'react';
 import { Copy, Share2 } from 'lucide-react';
@@ -9,6 +10,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 const APP_URL = 'https://scan-and-send-tau.vercel.app';
 
 export function ShareApp() {
+  const { t } = usePreferences();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -20,7 +22,7 @@ export function ShareApp() {
     sharing.current = true; setBusy(true); setNotice('');
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Scan and Send', text: 'Transformez vos documents en PDF avec Scan and Send.', url: APP_URL });
+        await navigator.share({ title: 'Scan and Send', text: t("Transformez vos documents en PDF avec Scan and Send."), url: APP_URL });
       } else setOpen(true);
     } catch (cause) {
       if (!(cause instanceof Error && cause.name === 'AbortError')) setOpen(true);
@@ -38,17 +40,17 @@ export function ShareApp() {
   };
 
   return <>
-    <Button variant="ghost" className="share-app-button" disabled={busy} onClick={share}><Share2 />Partager l’app</Button>
+    <Button variant="ghost" className="share-app-button" disabled={busy} onClick={share}><Share2 />{t("Partager l’app")}</Button>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="mail-dialog" showCloseButton={false}>
-        <DialogTitle>Partager Scan and Send</DialogTitle>
-        <DialogDescription>Envoyez ce lien pour faire découvrir l’application.</DialogDescription>
-        <Input ref={link} value={APP_URL} readOnly aria-label="Lien de l’application" onFocus={event => event.target.select()} />
+        <DialogTitle>{t("Partager Scan and Send")}</DialogTitle>
+        <DialogDescription>{t("Envoyez ce lien pour faire découvrir l’application.")}</DialogDescription>
+        <Input ref={link} value={APP_URL} readOnly aria-label={t("Lien de l’application")} onFocus={event => event.target.select()} />
         <div className="dialog-actions">
-          <Button className="action" onClick={copy}><Copy />Copier le lien</Button>
-          <DialogClose render={<Button variant="ghost" className="action" />}>Fermer</DialogClose>
+          <Button className="action" onClick={copy}><Copy />{t("Copier le lien")}</Button>
+          <DialogClose render={<Button variant="ghost" className="action" />}>{t("Fermer")}</DialogClose>
         </div>
-        {notice && <p role="status">{notice}</p>}
+        {notice && <p role="status">{t(notice)}</p>}
       </DialogContent>
     </Dialog>
   </>;

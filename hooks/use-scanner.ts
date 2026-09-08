@@ -1,4 +1,5 @@
 "use client";
+import { translate, translateMessage, type Locale } from '@/lib/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MAX_PAGES, DEFAULT_CONTRAST, cloneImageEdits, combinePages, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, snapshotPhoto, type ImageEdits, type RenderMode } from '@/lib/document';
 
@@ -13,11 +14,12 @@ const newSettings = (mode: RenderMode = 'bw'): Settings => ({ mode, rotation: 0,
 const copySettings = (settings: Settings): Settings => ({ ...settings, edits: cloneImageEdits(settings.edits) });
 const release = (canvas: HTMLCanvasElement | null) => { if (canvas) { canvas.width = 0; canvas.height = 0; } };
 
-export function useScanner() {
+export function useScanner(locale: Locale = 'fr') {
   const [preview, setPreview] = useState('');
   const [mode, setModeState] = useState<RenderMode>('bw');
   const [contrast, setContrastState] = useState(DEFAULT_CONTRAST);
-  const [name, setName] = useState('Mon document');
+  const [customName, setName] = useState<string | null>(null);
+  const name = customName ?? translate(locale, 'Mon document');
   const [pages, setPages] = useState<{ id: number; preview: string }[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,13 +63,13 @@ export function useScanner() {
     const current = [...pagesRef.current];
     const missing = current.findIndex(page => !page.pdfBlob);
     if (missing !== -1) throw new Error(`La page ${missing + 1} doit être préparée. Sélectionnez-la pour réessayer.`);
-    const pdfBlob = await combinePages(current.map(page => page.pdfBlob!), signal);
+    const pdfBlob = await combinePages(current.map(page => page.pdfBlob!), signal, locale);
     if (job !== generation.current) return null;
     const url = URL.createObjectURL(pdfBlob);
     if (documentUrl.current) URL.revokeObjectURL(documentUrl.current);
     documentUrl.current = url;
     const next = { pdfBlob, url }; setArtifact(next); return next;
-  }, []);
+  }, [locale]);
 
   const regenerate = useCallback(async () => {
     if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
@@ -235,12 +237,12 @@ export function useScanner() {
       void selectPage(pagesRef.current[Math.min(Math.max(index, 0), pagesRef.current.length - 1)].id);
     } else {
       if (documentUrl.current) { URL.revokeObjectURL(documentUrl.current); documentUrl.current = null; }
-      settings.current = newSettings(); setModeState('bw'); setContrastState(DEFAULT_CONTRAST); setName('Mon document');
+      settings.current = newSettings(); setModeState('bw'); setContrastState(DEFAULT_CONTRAST); setName(null);
     }
   }, [cancelWork, selectPage, syncPages]);
 
   // PDF bytes are prepared before the tap so native sharing keeps user activation.
-  const pdf = useMemo(() => artifact && !busy ? { url: artifact.url, file: new File([artifact.pdfBlob], safeFilename(name), { type: 'application/pdf' }) } : null, [artifact, busy, name]);
+  const pdf = useMemo(() => artifact && !busy ? { url: artifact.url, file: new File([artifact.pdfBlob], safeFilename(name || translate(locale, 'Mon document')), { type: 'application/pdf' }) } : null, [artifact, busy, name, locale]);
 
   const save = () => {
     setNotice('Téléchargement lancé. Si le PDF s’ouvre sur votre iPhone, touchez Partager puis « Enregistrer dans Fichiers ».');
@@ -310,6 +312,6 @@ export function useScanner() {
     if (original.current) { original.current.width = 0; original.current.height = 0; }
   }, []);
 
-  const size = artifact ? (artifact.pdfBlob.size < 1024 * 1024 ? `${Math.max(1, Math.round(artifact.pdfBlob.size / 1024))} Ko` : `${(artifact.pdfBlob.size / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`) : '';
-  return { pages, activeIndex: pages.findIndex(page => page.id === selectedId), source: pages.length > 0, preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, editor, openEditor, closeEditor, applyEdits, defaultContrast: DEFAULT_CONTRAST, name, setName, busy, loading, pdf, error, notice, fallback, setFallback, loadFiles, selectPage, rotate, save, share, size };
+  const size = artifact ? (artifact.pdfBlob.size < 1024 * 1024 ? `${Math.max(1, Math.round(artifact.pdfBlob.size / 1024))} ${locale === 'fr' ? 'Ko' : 'KB'}` : `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(artifact.pdfBlob.size / (1024 * 1024))} ${locale === 'fr' ? 'Mo' : 'MB'}`) : '';
+  return { pages, activeIndex: pages.findIndex(page => page.id === selectedId), source: pages.length > 0, preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, editor, openEditor, closeEditor, applyEdits, defaultContrast: DEFAULT_CONTRAST, name, setName, busy, loading, pdf, error: translateMessage(locale, error), notice: translateMessage(locale, notice), fallback, setFallback, loadFiles, selectPage, rotate, save, share, size };
 }

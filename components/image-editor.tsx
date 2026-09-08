@@ -1,4 +1,5 @@
 "use client";
+import { usePreferences } from '@/components/preferences';
 
 import { useState } from 'react';
 import ReactCrop from 'react-image-crop';
@@ -17,6 +18,7 @@ type Props = {
 };
 
 export function ImageEditor({ image, onApply, onCancel }: Props) {
+  const { t } = usePreferences();
   const [crop, setCrop] = useState<CropArea>({ ...image.edits.crop });
   const [corners, setCorners] = useState<CropCorners>(() => cloneImageEdits(image.edits).corners ?? cropCorners(image.edits.crop));
   const [cropMode, setCropMode] = useState(image.edits.corners ? 'perspective' : 'rectangle');
@@ -47,12 +49,12 @@ export function ImageEditor({ image, onApply, onCancel }: Props) {
   return <Dialog open onOpenChange={open => { if (!open) onCancel(); }}>
     <DialogContent className="crop-dialog" showCloseButton={false}>
       <div className="crop-heading">
-        <DialogTitle>Rogner et redimensionner</DialogTitle>
-        <DialogDescription>{cropMode === 'perspective' ? 'Placez les quatre coins sur les bords de la feuille. « Appliquer » redressera le document.' : 'Déplacez les coins du cadre pour garder uniquement la zone souhaitée.'}</DialogDescription>
+        <DialogTitle>{t("Rogner et redimensionner")}</DialogTitle>
+        <DialogDescription>{cropMode === 'perspective' ? t("Placez les quatre coins sur les bords de la feuille. « Appliquer » redressera le document.") : t("Déplacez les coins du cadre pour garder uniquement la zone souhaitée.")}</DialogDescription>
       </div>
-      <RadioGroup className="crop-mode" value={cropMode} onValueChange={value => { setCropMode(String(value)); setDraft(null); }} aria-label="Type de recadrage">
-        <label className={cropMode === 'rectangle' ? 'selected' : ''}><RadioGroupItem value="rectangle" />Rectangle</label>
-        <label className={cropMode === 'perspective' ? 'selected' : ''}><RadioGroupItem value="perspective" />4 coins libres</label>
+      <RadioGroup className="crop-mode" value={cropMode} onValueChange={value => { setCropMode(String(value)); setDraft(null); }} aria-label={t("Type de recadrage")}>
+        <label className={cropMode === 'rectangle' ? 'selected' : ''}><RadioGroupItem value="rectangle" />{t("Rectangle")}</label>
+        <label className={cropMode === 'perspective' ? 'selected' : ''}><RadioGroupItem value="perspective" />{t("4 coins libres")}</label>
       </RadioGroup>
       <div className={`crop-stage${cropMode === 'perspective' ? ' perspective-stage' : ''}`}>
         {cropMode === 'perspective' ? <PerspectiveCropper image={image} corners={corners} onChange={next => { setCorners(next); setDraft(null); }} onLoad={() => setReady(true)} onError={() => setLoadError(true)} /> : <ReactCrop
@@ -65,28 +67,28 @@ export function ImageEditor({ image, onApply, onCancel }: Props) {
           keepSelection
           ruleOfThirds
           ariaLabels={{
-            cropArea: 'Zone conservée. Utilisez les flèches pour déplacer le cadre.',
-            nwDragHandle: 'Coin supérieur gauche', nDragHandle: 'Bord supérieur',
-            neDragHandle: 'Coin supérieur droit', eDragHandle: 'Bord droit',
-            seDragHandle: 'Coin inférieur droit', sDragHandle: 'Bord inférieur',
-            swDragHandle: 'Coin inférieur gauche', wDragHandle: 'Bord gauche',
+            cropArea: t("Zone conservée. Utilisez les flèches pour déplacer le cadre."),
+            nwDragHandle: t("Coin supérieur gauche"), nDragHandle: t("Bord supérieur"),
+            neDragHandle: t("Coin supérieur droit"), eDragHandle: t("Bord droit"),
+            seDragHandle: t("Coin inférieur droit"), sDragHandle: t("Bord inférieur"),
+            swDragHandle: t("Coin inférieur gauche"), wDragHandle: t("Bord gauche"),
           }}
         >
-          <img src={image.url} alt="Photo à recadrer" draggable={false} onLoad={() => setReady(true)} onError={() => setLoadError(true)} />
+          <img src={image.url} alt={t("Photo à recadrer")} draggable={false} onLoad={() => setReady(true)} onError={() => setLoadError(true)} />
         </ReactCrop>}
       </div>
-      {loadError && <p className="feedback error" role="alert">L’aperçu ne s’est pas chargé. Annulez puis rouvrez le recadrage.</p>}
+      {loadError && <p className="feedback error" role="alert">{t("L’aperçu ne s’est pas chargé. Annulez puis rouvrez le recadrage.")}</p>}
       <div className="resize-section">
-        <div className="resize-heading"><h3>Dimensions de l’image</h3><span><LockKeyhole aria-hidden="true" />Proportions conservées</span></div>
+        <div className="resize-heading"><h3>{t("Dimensions de l’image")}</h3><span><LockKeyhole aria-hidden="true" />{t("Proportions conservées")}</span></div>
         <div className="resize-fields">
-          <div><label htmlFor="image-width">Largeur</label><div className="dimension-input"><Input id="image-width" type="number" inputMode="numeric" min={1} max={geometry.maxWidth} step={1} value={draft?.axis === 'width' ? draft.text : geometry.outputWidth} onChange={event => changeDimension('width', event.target.value)} onBlur={() => { if (!invalidSize) setDraft(null); }} aria-invalid={invalidSize && draft?.axis === 'width'} aria-describedby="dimension-help" /><span>px</span></div></div>
-          <div><label htmlFor="image-height">Hauteur</label><div className="dimension-input"><Input id="image-height" type="number" inputMode="numeric" min={1} max={geometry.maxHeight} step={1} value={draft?.axis === 'height' ? draft.text : geometry.outputHeight} onChange={event => changeDimension('height', event.target.value)} onBlur={() => { if (!invalidSize) setDraft(null); }} aria-invalid={invalidSize && draft?.axis === 'height'} aria-describedby="dimension-help" /><span>px</span></div></div>
+          <div><label htmlFor="image-width">{t("Largeur")}</label><div className="dimension-input"><Input id="image-width" type="number" inputMode="numeric" min={1} max={geometry.maxWidth} step={1} value={draft?.axis === 'width' ? draft.text : geometry.outputWidth} onChange={event => changeDimension('width', event.target.value)} onBlur={() => { if (!invalidSize) setDraft(null); }} aria-invalid={invalidSize && draft?.axis === 'width'} aria-describedby="dimension-help" /><span>px</span></div></div>
+          <div><label htmlFor="image-height">{t("Hauteur")}</label><div className="dimension-input"><Input id="image-height" type="number" inputMode="numeric" min={1} max={geometry.maxHeight} step={1} value={draft?.axis === 'height' ? draft.text : geometry.outputHeight} onChange={event => changeDimension('height', event.target.value)} onBlur={() => { if (!invalidSize) setDraft(null); }} aria-invalid={invalidSize && draft?.axis === 'height'} aria-describedby="dimension-help" /><span>px</span></div></div>
         </div>
-        <p id="dimension-help" className={invalidSize ? 'dimension-help invalid' : 'dimension-help'}>{invalidSize ? `Saisissez un nombre entier entre 1 et ${draftMax}.` : `Maximum : ${geometry.maxWidth} × ${geometry.maxHeight} px.`}</p>
+        <p id="dimension-help" className={invalidSize ? 'dimension-help invalid' : 'dimension-help'}>{invalidSize ? t('Saisissez un nombre entier entre 1 et {max}.', { max: draftMax }) : t('Maximum : {width} × {height} px.', { width: geometry.maxWidth, height: geometry.maxHeight })}</p>
       </div>
       <div className="crop-actions">
-        <Button variant="ghost" className="action crop-reset" onClick={reset}><RotateCcw />Image entière</Button>
-        <div><Button variant="outline" className="action" onClick={onCancel}>Annuler</Button><Button className="action" disabled={!ready || loadError || invalidSize} onClick={() => onApply(cloneImageEdits({ ...currentEdits, scale: geometry.effectiveScale }))}><Check />Appliquer</Button></div>
+        <Button variant="ghost" className="action crop-reset" onClick={reset}><RotateCcw />{t("Image entière")}</Button>
+        <div><Button variant="outline" className="action" onClick={onCancel}>{t("Annuler")}</Button><Button className="action" disabled={!ready || loadError || invalidSize} onClick={() => onApply(cloneImageEdits({ ...currentEdits, scale: geometry.effectiveScale }))}><Check />{t("Appliquer")}</Button></div>
       </div>
     </DialogContent>
   </Dialog>;

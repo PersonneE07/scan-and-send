@@ -251,12 +251,12 @@ export async function snapshotPhoto(canvas: HTMLCanvasElement, signal?: AbortSig
   return blob;
 }
 
-export async function combinePages(pages: Blob[], signal?: AbortSignal): Promise<Blob> {
+export async function combinePages(pages: Blob[], signal?: AbortSignal, locale: 'fr' | 'en' = 'fr'): Promise<Blob> {
   signal?.throwIfAborted();
   if (!pages.length) throw new Error('Ajoutez au moins une page.');
   const { PDFDocument } = await import('pdf-lib');
   const document = await PDFDocument.create();
-  document.setTitle('Document numérisé'); document.setCreator('Scan and Send'); document.setLanguage('fr-FR');
+  document.setTitle(locale === 'en' ? 'Scanned document' : 'Document numérisé'); document.setCreator('Scan and Send'); document.setLanguage(locale === 'en' ? 'en' : 'fr-FR');
   for (const blob of pages) {
     signal?.throwIfAborted();
     const source = await PDFDocument.load(await blob.arrayBuffer());

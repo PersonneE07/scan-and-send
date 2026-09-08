@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { PreferencesProvider } from '@/components/preferences';
 
 export const metadata: Metadata = {
   title: 'Scan and Send — Photo en PDF',
@@ -14,5 +15,5 @@ export const metadata: Metadata = {
 };
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#f5f7fa' };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="fr"><body>{children}</body></html>;
+  return <html lang="fr" suppressHydrationWarning><head><script src="/preferences-init.js" /></head><body><PreferencesProvider>{children}</PreferencesProvider></body></html>;
 }

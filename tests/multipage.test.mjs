@@ -15,6 +15,7 @@ const require = createRequire(import.meta.url);
 let source = await readFile(new URL('../hooks/use-scanner.ts', import.meta.url), 'utf8');
 source = source.replace("from 'react'", `from '${pathToFileURL(require.resolve('react')).href}'`)
   .replace('normalizePhoto, ', '')
+  .replace("from '@/lib/i18n'", `from '${new URL('../lib/i18n.ts', import.meta.url).href}'`)
   .replace("from '@/lib/document'", `from '${new URL('../lib/document.ts', import.meta.url).href}'`);
 source = 'const normalizePhoto = (...args) => globalThis.scannerTestDecode(...args);\n' + stripTypeScriptTypes(source);
 const { useScanner } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
@@ -26,7 +27,7 @@ function photo(color, name = 'photo.png') {
   return new File([canvas.toBuffer('image/png')], name, { type: 'image/png' });
 }
 
-async function harness(t) {
+async function harness(t, locale = 'fr') {
   const owned = new Set(), createURL = URL.createObjectURL, revokeURL = URL.revokeObjectURL;
   t.mock.method(URL, 'createObjectURL', blob => { const url = createURL(blob); owned.add(url); return url; });
   t.mock.method(URL, 'revokeObjectURL', url => { owned.delete(url); revokeURL(url); });
@@ -43,7 +44,7 @@ async function harness(t) {
     return canvas;
   };
   let api, root;
-  function Probe() { api = useScanner(); return null; }
+  function Probe() { api = useScanner(locale); return null; }
   await act(async () => { root = create(React.createElement(Probe)); });
   t.after(async () => {
     await act(async () => root.unmount());
@@ -54,6 +55,7 @@ async function harness(t) {
   });
   return {
     get api() { return api; },
+    async language(next) { locale = next; await act(async () => root.update(React.createElement(Probe))); },
     async run(action) {
       await act(async () => { await action(api); await pause(); });
       const deadline = Date.now() + 5000;
@@ -168,4 +170,27 @@ test('oversized page batches are rejected without modifying the current PDF', as
   await h.run(api => api.loadFiles([{ size: 101 * 1024 * 1024 }]));
   assert.match(h.api.error, /100 Mo/);
   assert.equal(h.api.pdf.file, before);
+});
+
+
+test('language changes preserve pages and custom filenames and translate feedback', async t => {
+  const h = await harness(t, 'en');
+  assert.equal(h.api.name, 'My document');
+  await h.run(api => api.loadFiles([photo('blue')]));
+  const before = h.api.pdf.file;
+  const preview = h.api.preview;
+  assert.equal(before.name, 'My document.pdf');
+  await h.language('fr');
+  assert.equal(h.api.name, 'Mon document');
+  assert.equal(h.api.preview, preview);
+  assert.equal(h.api.pages.length, 1);
+  assert.deepEqual(await h.api.pdf.file.arrayBuffer(), await before.arrayBuffer());
+  await h.run(api => api.setName('Invoice été'));
+  await h.language('en');
+  assert.equal(h.api.name, 'Invoice été');
+  await h.run(api => api.loadFiles(Array.from({ length: 20 }, () => photo('red'))));
+  assert.equal(h.api.error, 'A document can contain up to 20 pages.');
+  await h.language('fr');
+  assert.match(h.api.error, /20 pages/);
+  assert.equal(h.api.pdf.file.name, 'Invoice été.pdf');
 });

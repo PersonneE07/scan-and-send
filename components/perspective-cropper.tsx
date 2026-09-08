@@ -1,4 +1,5 @@
 "use client";
+import { usePreferences } from '@/components/preferences';
 
 import { useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { validCorners, type CropCorners, type CropPoint } from '@/lib/document';
@@ -15,6 +16,7 @@ type Props = {
 };
 
 export function PerspectiveCropper({ image, corners, onChange, onLoad, onError }: Props) {
+  const { t } = usePreferences();
   const surface = useRef<HTMLDivElement>(null);
   const drag = useRef<{ index: number; pointerId: number; x: number; y: number; point: CropPoint } | null>(null);
   const [blocked, setBlocked] = useState(false);
@@ -62,7 +64,7 @@ export function PerspectiveCropper({ image, corners, onChange, onLoad, onError }
 
   return <>
     <div ref={surface} className="perspective-crop" style={{ width: `min(100%, ${ratio * 38}dvh, ${ratio * 360}px)` }}>
-      <img src={image.url} alt="Photo à redresser" draggable={false} onLoad={onLoad} onError={onError} />
+      <img src={image.url} alt={t("Photo à redresser")} draggable={false} onLoad={onLoad} onError={onError} />
       <svg className="perspective-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <path d={cutout} fill="rgba(0,0,0,.55)" fillRule="evenodd" />
         <polygon points={polygon} fill="none" stroke="white" strokeWidth="2" vectorEffect="non-scaling-stroke" />
@@ -70,7 +72,7 @@ export function PerspectiveCropper({ image, corners, onChange, onLoad, onError }
       {corners.map((point, index) => <button
         key={index} type="button" className="perspective-corner"
         style={{ left: `${point.x}%`, top: `${point.y}%` }}
-        aria-label={`${cornerNames[index]} : ${Math.round(point.x)} % horizontal, ${Math.round(point.y)} % vertical`}
+        aria-label={`${t(cornerNames[index])} : ${Math.round(point.x)} % horizontal, ${Math.round(point.y)} % vertical`}
         aria-describedby={helpId}
         onPointerDown={event => pointerDown(event, index)} onPointerMove={pointerMove}
         onPointerUp={pointerEnd} onPointerCancel={pointerEnd} onLostPointerCapture={() => { drag.current = null; }}
@@ -78,7 +80,7 @@ export function PerspectiveCropper({ image, corners, onChange, onLoad, onError }
       ><span aria-hidden="true" /></button>)}
     </div>
     <p id={helpId} className={`perspective-help${blocked ? ' invalid' : ''}`} role="status">
-      {blocked ? 'Les bords ne doivent pas se croiser. Écartez ce coin des autres.' : 'Déplacez chaque coin au doigt ou avec les flèches du clavier.'}
+      {blocked ? t("Les bords ne doivent pas se croiser. Écartez ce coin des autres.") : t("Déplacez chaque coin au doigt ou avec les flèches du clavier.")}
     </p>
   </>;
 }
