@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-deprecated -- Test doubles intentionally replace browser APIs; merged DOM/Worker overloads flag these fixture properties. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -17,9 +18,11 @@ const require = createRequire(import.meta.url);
 let source = await readFile(new URL('../hooks/use-scanner.ts', import.meta.url), 'utf8');
 source = source.replace("from 'react'", `from '${pathToFileURL(require.resolve('react')).href}'`)
   .replace('normalizePhoto, ', '')
-  .replace("from '@/lib/draft'", `from '${new URL('../lib/draft.ts', import.meta.url).href}'`)
   .replace("from '@/lib/i18n'", `from '${new URL('../lib/i18n.ts', import.meta.url).href}'`)
   .replace("from '@/lib/document'", `from '${new URL('../lib/document.ts', import.meta.url).href}'`);
+for (const path of ['./use-page-collection.ts', './use-local-draft.ts', './use-pdf-export.ts', '../lib/scan-page.ts']) {
+  source = source.replace(`from '${path}'`, `from '${new URL(path, new URL('../hooks/use-scanner.ts', import.meta.url)).href}'`);
+}
 source = 'const normalizePhoto = (...args) => globalThis.scannerTestDecode(...args);\n' + stripTypeScriptTypes(source);
 const { useScanner } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const pause = () => new Promise(resolve => setTimeout(resolve, 10));
@@ -31,7 +34,7 @@ function photo(color, name = 'photo.png') {
 }
 
 async function harness(t, locale = 'fr') {
-  const owned = new Set(), createURL = URL.createObjectURL, revokeURL = URL.revokeObjectURL;
+  const owned = new Set(), createURL = URL.createObjectURL.bind(URL), revokeURL = URL.revokeObjectURL.bind(URL);
   t.mock.method(URL, 'createObjectURL', blob => { const url = createURL(blob); owned.add(url); return url; });
   t.mock.method(URL, 'revokeObjectURL', url => { owned.delete(url); revokeURL(url); });
   const previous = { document: globalThis.document, requestAnimationFrame: globalThis.requestAnimationFrame, scannerTestDecode: globalThis.scannerTestDecode, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT };
@@ -47,7 +50,7 @@ async function harness(t, locale = 'fr') {
     return canvas;
   };
   let api, root;
-  function Probe() { api = useScanner(locale); return null; }
+  function Probe() { const value = useScanner(locale); React.useLayoutEffect(() => { api = value; }); return null; }
   await act(async () => { root = create(React.createElement(Probe)); });
   t.after(async () => {
     await act(async () => root.unmount());

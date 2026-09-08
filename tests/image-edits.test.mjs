@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-deprecated -- Test doubles intentionally replace browser APIs; merged DOM/Worker overloads flag these fixture properties. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
@@ -65,7 +66,7 @@ test('actual canvas cropping, resizing and all rotations preserve the selected p
     for (const { x, y, color } of samples) {
       const [rx, ry] = rotation === 0 ? [x, y] : rotation === 90 ? [59 - y, x] : rotation === 180 ? [99 - x, 59 - y] : [y, 99 - x];
       const actual = preview.pixels.subarray((ry * preview.width + rx) * 4, (ry * preview.width + rx) * 4 + 3);
-      assert.ok(actual.every((value, index) => Math.abs(value - color[index]) < 15), `Selected color at rotation ${rotation}: ${actual}`);
+      assert.ok(actual.every((value, index) => Math.abs(value - color[index]) < 15), `Selected color at rotation ${String(rotation)}: ${String(actual)}`);
     }
     const pdf = await PDFDocument.load(await result.pdfBlob.arrayBuffer());
     const image = embeddedImage(pdf);
@@ -145,7 +146,7 @@ test('free corners covering the full image preserve every pixel, including a one
   useCanvas(t);
   const narrow = createCanvas(1, 20), context = narrow.getContext('2d');
   context.fillStyle = 'blue'; context.fillRect(0, 0, 1, 20);
-  const create = globalThis.document.createElement;
+  const create = globalThis.document.createElement.bind(globalThis.document);
   let rawPixels;
   globalThis.document.createElement = () => {
     const canvas = create(), toBlob = canvas.toBlob.bind(canvas);
@@ -195,7 +196,7 @@ test('a photographed trapezoid is actually straightened, resized and saved with 
       const [originalU, originalV] = rotation === 0 ? [u, v] : rotation === 90 ? [v, 1 - u] : rotation === 180 ? [1 - u, 1 - v] : [1 - v, u];
       const expected = [20 + 200 * originalU, 20 + 200 * originalV, 80];
       const actual = preview.pixels.subarray((y * preview.width + x) * 4, (y * preview.width + x) * 4 + 3);
-      assert.ok(actual.every((value, index) => Math.abs(value - expected[index]) < 4), `Perspective must straighten the texture at ${rotation}°: ${actual} vs ${expected}`);
+      assert.ok(actual.every((value, index) => Math.abs(value - expected[index]) < 4), `Perspective must straighten the texture at ${String(rotation)}°: ${String(actual)} vs ${String(expected)}`);
     }
     const pdf = await PDFDocument.load(await result.pdfBlob.arrayBuffer());
     const image = embeddedImage(pdf);
@@ -221,7 +222,7 @@ test('perspective correction also saves exactly the selected black and white ren
 test('cancelling between perspective row batches prevents encoding and PDF creation', async t => {
   useCanvas(t);
   const source = coloredPhoto(), original = source.toBuffer('image/png');
-  const create = globalThis.document.createElement;
+  const create = globalThis.document.createElement.bind(globalThis.document);
   let encodings = 0;
   globalThis.document.createElement = () => {
     const canvas = create(), toBlob = canvas.toBlob.bind(canvas);

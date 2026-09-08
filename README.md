@@ -39,3 +39,21 @@ Le choix de caméra dépend du navigateur et du système. Le partage de fichiers
 Les tests vérifient le contenu réel d’un PDF rouvert, les couleurs, le noir et blanc sous éclairage irrégulier, le recadrage et le redimensionnement sur un véritable canvas, les quatre rotations, la mise en page A4, les noms de fichiers et les entrées invalides. Des tests du hook vérifient l’ordre des pages, les réglages individuels, le remplacement, la suppression, l’annulation des imports, la libération des URLs et le fichier complet transmis au partage natif simulé. La caméra physique, les gestes tactiles, le dossier final sur iPhone/Android et la messagerie nécessitent une vérification sur ces appareils ; ils n’ont pas été testés physiquement ici.
 
 Un outil WebMCP optionnel `prepare_current_pdf` est disponible si `document.modelContext` est pris en charge. Aucun contexte WebMCP compatible n’était disponible pour vérifier son contrat pendant la création ; ce point reste non vérifié.
+
+## Qualité, performances et architecture
+
+`npm run check` lance le lint, TypeScript et les tests. Le workflow GitHub **Quality** exécute ces vérifications sur chaque pull request et chaque push sur `main`, puis compile l’export et contrôle son budget JavaScript. Il utilise Node 24, un jeton en lecture seule et des versions d’actions fixées par SHA. Vercel exécute les mêmes étapes avant de déployer : un contrôle en échec bloque la nouvelle version. Cela suit le parcours [`setup-node` / `npm ci` documenté par GitHub](https://docs.github.com/en/actions/tutorials/build-and-test-code/nodejs).
+
+Le seuil et le redressement par perspective s’exécutent dans un Worker distinct, démarré à la demande et arrêté après résultat, erreur ou annulation. Les données restent locales. Sans Worker utilisable, le traitement revient sur le fil principal avec des pauses entre blocs pour permettre l’annulation. Le décodage initial, les opérations canvas et l’assemblage PDF restent sur le fil principal. La création du Worker suit [la syntaxe recommandée par Vite](https://vite.dev/guide/features#web-workers).
+
+L’éditeur et sa feuille de styles sont chargés à l’ouverture du recadrage. La bibliothèque PDF reste chargée à la première préparation. Les contrôles de contraste et de rendu n’importent plus leurs anciennes primitives génériques. Les 54 composants inutilisés du modèle initial et leurs dépendances ont été supprimés. Le JavaScript initial est passé d’environ 194 à 177,5 kB gzip ; `npm run check:bundle` impose un plafond de 185 kB et vérifie que l’éditeur/PDF ne sont pas dans le chargement initial. Cette mesure porte sur les fichiers nécessaires au premier écran, pas sur tous les fichiers différés ni sur un score mobile réel.
+
+Responsabilités :
+- `hooks/use-scanner.ts` : orchestration des imports, du rendu et des annulations.
+- `hooks/use-page-collection.ts` : pages, ordre, suppression et annulation.
+- `hooks/use-local-draft.ts` et `lib/draft.ts` : sauvegarde et reprise IndexedDB.
+- `hooks/use-pdf-export.ts` et `lib/pdf.ts` : assemblage, URLs, téléchargement et partage.
+- `lib/image-geometry.ts`, `lib/image-pixels.ts` et `workers/image.worker.ts` : géométrie et calculs d’image.
+- `lib/document.ts` : décodage, canvas et façade compatible avec les tests existants.
+
+Les exceptions de lint sont limitées et commentées : images privées sous forme d’URL blob (pas d’optimiseur serveur), initialisation du thème avant affichage, suppression volontaire des caractères de contrôle dans les noms de fichiers et faux positifs sur les doubles de navigateur des tests. Les règles de production restent actives.

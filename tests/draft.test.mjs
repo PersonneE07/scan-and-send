@@ -22,3 +22,13 @@ test('IndexedDB preserves blobs and serializes saves before deletion; expired dr
     assert.equal(await readDraft(), null);
   } finally { delete globalThis.indexedDB; }
 });
+
+test('draft geometry accepts valid enlargement and rejects malformed crop settings', () => {
+  const enlarged = record();
+  enlarged.pages[0].settings.edits.scale = 2;
+  assert.equal(validDraft(enlarged), true, 'Enlargements are clamped by the renderer and must remain recoverable');
+  enlarged.pages[0].settings.edits.crop.width = -1;
+  assert.equal(validDraft(enlarged), false);
+  delete enlarged.pages[0].settings.edits.crop;
+  assert.equal(validDraft(enlarged), false);
+});

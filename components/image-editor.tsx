@@ -1,4 +1,6 @@
+/* eslint-disable nextjs/no-img-element -- Private local blob images cannot use a server image optimizer. */
 "use client";
+import 'react-image-crop/dist/ReactCrop.css';
 import { usePreferences } from '@/components/preferences';
 
 import { useState } from 'react';

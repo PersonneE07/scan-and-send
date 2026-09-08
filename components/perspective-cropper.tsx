@@ -1,3 +1,4 @@
+/* eslint-disable nextjs/no-img-element -- Private local blob images cannot use a server image optimizer. */
 "use client";
 import { usePreferences } from '@/components/preferences';
 
@@ -79,8 +80,8 @@ export function PerspectiveCropper({ image, corners, onChange, onLoad, onError }
         onKeyDown={event => keyDown(event, index)}
       ><span aria-hidden="true" /></button>)}
     </div>
-    <p id={helpId} className={`perspective-help${blocked ? ' invalid' : ''}`} role="status">
+    <output id={helpId} className={`perspective-help${blocked ? ' invalid' : ''}`}>
       {blocked ? t("Les bords ne doivent pas se croiser. Écartez ce coin des autres.") : t("Déplacez chaque coin au doigt ou avec les flèches du clavier.")}
-    </p>
+    </output>
   </>;
 }

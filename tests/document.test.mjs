@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-deprecated -- Test doubles intentionally replace browser APIs; merged DOM/Worker overloads flag these fixture properties. */
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -51,7 +52,7 @@ test('default contrast preserves the previous scan and higher contrast reveals f
   // Golden output captured from the previous published algorithm, before adding contrast.
   assert.equal(createHash('sha256').update(variants[1]).digest('hex'), '8e9d82fc24e111f55b58219913bfc511629d4b276dffb20b2648be8afba27ef7');
   const counts = variants.map(output => Array.from(output).filter((value, index) => index % 4 === 0 && value === 0).length);
-  assert.ok(counts[0] < counts[1] && counts[1] < counts[2], `Faint strokes must become visible: ${counts}`);
+  assert.ok(counts[0] < counts[1] && counts[1] < counts[2], `Faint strokes must become visible: ${counts.join(", ")}`);
   for (let index = 0; index < pixels.length; index += 4) {
     assert.ok(variants[0][index] >= variants[1][index] && variants[1][index] >= variants[2][index]);
   }

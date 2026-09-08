@@ -1,3 +1,4 @@
+/* eslint-disable nextjs/no-sync-scripts -- Tiny same-origin theme bootstrap must run before paint to avoid a light-theme flash. */
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { PreferencesProvider } from '@/components/preferences';

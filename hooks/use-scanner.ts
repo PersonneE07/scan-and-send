@@ -1,43 +1,33 @@
 "use client";
-import { readDraft, writeDraft, type Draft } from '@/lib/draft';
+import { usePageCollection } from './use-page-collection.ts';
+import { useLocalDraft } from './use-local-draft.ts';
+import { usePdfExport } from './use-pdf-export.ts';
+import { newSettings, copySettings, type ScanPage, type Settings } from '../lib/scan-page.ts';
 import { translate, translateMessage, type Locale } from '@/lib/i18n';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MAX_PAGES, DEFAULT_CONTRAST, cloneImageEdits, combinePages, defaultImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, snapshotPhoto, type ImageEdits, type RenderMode } from '@/lib/document';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { MAX_PAGES, DEFAULT_CONTRAST, cloneImageEdits, editorPreview, imageGeometry, normalizePhoto, renderDocument, rotateImageEdits, safeFilename, snapshotPhoto, type ImageEdits, type RenderMode } from '@/lib/document';
 
-type Settings = { mode: RenderMode; rotation: number; contrast: number; edits: ImageEdits };
-type ScanPage = { id: number; photo: Blob; settings: Settings; pdfBlob: Blob | null; preview: string; previewBlob: Blob };
-type Artifact = { pdfBlob: Blob; url: string };
 type Editor = { url: string; width: number; height: number; edits: ImageEdits; generation: number };
 type WebTool = { name: string; description: string; inputSchema: object; annotations: { readOnlyHint: boolean; untrustedContentHint: boolean }; execute: (input: unknown) => unknown };
 type ModelDocument = Document & { modelContext?: { registerTool: (tool: WebTool, options: { signal: AbortSignal }) => void | Promise<void> } };
 const nextPaint = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-const newSettings = (mode: RenderMode = 'bw'): Settings => ({ mode, rotation: 0, contrast: DEFAULT_CONTRAST, edits: defaultImageEdits() });
-const copySettings = (settings: Settings): Settings => ({ ...settings, edits: cloneImageEdits(settings.edits) });
 const release = (canvas: HTMLCanvasElement | null) => { if (canvas) { canvas.width = 0; canvas.height = 0; } };
 
 export function useScanner(locale: Locale = 'fr') {
+  const pagesRef = useRef<ScanPage[]>([]);
+  const activeId = useRef<number | null>(null);
+  const nextId = useRef(0);
+  const { pages, selectedId, setSelectedId, undo, setUndo, syncPages, commitAdditions, removeSelected, restoreUndo, reorderSelected } = usePageCollection(pagesRef, activeId);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
-  const [pendingDraft, setPendingDraft] = useState<Draft | null>(null);
-  const [draftReady, setDraftReady] = useState(false);
-  const [draftResult, setDraftResult] = useState<{ pages: { id: number; preview: string }[]; name: string | null; status: 'saved' | 'temporary' } | null>(null);
-  const [undo, setUndo] = useState<{ page: ScanPage; index: number; replacementId: number | null; name: string | null } | null>(null);
   const [preview, setPreview] = useState('');
   const [mode, setModeState] = useState<RenderMode>('bw');
   const [contrast, setContrastState] = useState(DEFAULT_CONTRAST);
   const [customName, setName] = useState<string | null>(null);
   const name = customName ?? translate(locale, 'Mon document');
-  const [pages, setPages] = useState<{ id: number; preview: string }[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [fallback, setFallback] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const pagesRef = useRef<ScanPage[]>([]);
-  const activeId = useRef<number | null>(null);
-  const nextId = useRef(0);
   const original = useRef<HTMLCanvasElement | null>(null);
   const settings = useRef<Settings>(newSettings());
   const generation = useRef(0);
@@ -46,9 +36,9 @@ export function useScanner(locale: Locale = 'fr') {
   const activeImport = useRef<AbortController | null>(null);
   const activeEditor = useRef<AbortController | null>(null);
   const editorUrl = useRef<string | null>(null);
-  const documentUrl = useRef<string | null>(null);
-  const sharing = useRef(false);
-  const syncPages = useCallback(() => setPages(pagesRef.current.map(page => ({ id: page.id, preview: page.preview }))), []);
+
+  const { pendingDraft, setPendingDraft, draftReady, draftStatus, discardDraft } = useLocalDraft(pagesRef, pages, customName, busy, setError);
+  const { pdf, setArtifact, resetArtifact, publish, notice, setNotice, fallback, setFallback, save, share, size } = usePdfExport(pagesRef, generation, locale, name, busy, setError);
 
   const closeEditor = useCallback(() => {
     activeEditor.current?.abort(); activeEditor.current = null;
@@ -63,19 +53,7 @@ export function useScanner(locale: Locale = 'fr') {
     activeImport.current?.abort(); activeImport.current = null;
     closeEditor();
     setProgress(null); setBusy(false); setLoading(false); setError(''); setNotice(''); setFallback(false);
-  }, [closeEditor]);
-
-  const publish = useCallback(async (job: number, signal: AbortSignal) => {
-    const current = [...pagesRef.current];
-    const missing = current.findIndex(page => !page.pdfBlob);
-    if (missing !== -1) throw new Error(`La page ${missing + 1} doit être préparée. Sélectionnez-la pour réessayer.`);
-    const pdfBlob = await combinePages(current.map(page => page.pdfBlob!), signal, locale);
-    if (job !== generation.current) return null;
-    const url = URL.createObjectURL(pdfBlob);
-    if (documentUrl.current) URL.revokeObjectURL(documentUrl.current);
-    documentUrl.current = url;
-    const next = { pdfBlob, url }; setArtifact(next); return next;
-  }, [locale]);
+  }, [closeEditor, setNotice, setFallback]);
 
   const regenerate = useCallback(async () => {
     if (pendingRender.current !== null) { clearTimeout(pendingRender.current); pendingRender.current = null; }
@@ -101,7 +79,7 @@ export function useScanner(locale: Locale = 'fr') {
       if (job === generation.current) setError(cause instanceof Error ? cause.message : 'Le document n’a pas pu être créé. Réessayez sur cette page.');
       return null;
     } finally { if (job === generation.current) setBusy(false); }
-  }, [publish, syncPages]);
+  }, [publish, syncPages, setArtifact, setNotice]);
 
   const loadFiles = useCallback(async (files: File[], replaceCurrent = false) => {
     if (!files.length) return;
@@ -136,12 +114,7 @@ export function useScanner(locale: Locale = 'fr') {
       }
       if (job !== generation.current) return;
       const additions = staged.map(item => ({ ...item.page, preview: URL.createObjectURL(item.previewBlob) }));
-      const replaceIndex = pagesRef.current.findIndex(page => page.id === replacingId);
-      if (replaceIndex !== -1) {
-        setUndo({ page: { ...pagesRef.current[replaceIndex], settings: copySettings(pagesRef.current[replaceIndex].settings) }, index: replaceIndex, replacementId: additions[0].id, name: customName });
-        URL.revokeObjectURL(pagesRef.current[replaceIndex].preview);
-        pagesRef.current = pagesRef.current.map((page, index) => index === replaceIndex ? additions[0] : page);
-      } else pagesRef.current = [...pagesRef.current, ...additions];
+      commitAdditions(additions, replacingId, customName);
       const selected = additions[additions.length - 1];
       release(original.current); original.current = workingCanvas; workingCanvas = null;
       activeId.current = selected.id; settings.current = copySettings(selected.settings);
@@ -156,7 +129,7 @@ export function useScanner(locale: Locale = 'fr') {
       if (activeImport.current === controller) activeImport.current = null;
       if (job === generation.current) { setProgress(null); setLoading(false); setBusy(false); }
     }
-  }, [cancelWork, customName, publish, syncPages]);
+  }, [cancelWork, customName, commitAdditions, publish, syncPages, pagesRef, activeId, nextId, setSelectedId, setArtifact]);
 
   const selectPage = useCallback(async (id: number) => {
     const page = pagesRef.current.find(page => page.id === id);
@@ -184,7 +157,7 @@ export function useScanner(locale: Locale = 'fr') {
       release(canvas);
       if (activeImport.current === controller) activeImport.current = null;
     }
-  }, [cancelWork, publish, regenerate]);
+  }, [cancelWork, publish, regenerate, setSelectedId]);
 
   const setMode = useCallback((value: string) => {
     if (value !== 'bw' && value !== 'color') return;
@@ -207,7 +180,7 @@ export function useScanner(locale: Locale = 'fr') {
     setBusy(true); setArtifact(null); setError(''); setNotice('');
     if (pendingRender.current !== null) clearTimeout(pendingRender.current);
     pendingRender.current = setTimeout(() => { void regenerate(); }, 180);
-  }, [loading, regenerate]);
+  }, [loading, regenerate, setArtifact, setNotice]);
 
   const commitContrast = useCallback(() => { if (pendingRender.current !== null) void regenerate(); }, [regenerate]);
 
@@ -240,74 +213,34 @@ export function useScanner(locale: Locale = 'fr') {
     // Cancelling an import keeps the existing document, including all its pages.
     if (activeImport.current) { cancelWork(); return; }
     cancelWork();
-    const index = pagesRef.current.findIndex(page => page.id === activeId.current);
-    if (index !== -1) {
-      setUndo({ page: { ...pagesRef.current[index], settings: copySettings(pagesRef.current[index].settings) }, index, replacementId: null, name: customName });
-      URL.revokeObjectURL(pagesRef.current[index].preview);
-    }
-    pagesRef.current = pagesRef.current.filter(page => page.id !== activeId.current);
+    const index = removeSelected(customName);
     release(original.current); original.current = null;
     activeId.current = null; setSelectedId(null); setPreview(''); setArtifact(null); syncPages();
     if (pagesRef.current.length) {
       void selectPage(pagesRef.current[Math.min(Math.max(index, 0), pagesRef.current.length - 1)].id);
     } else {
-      if (documentUrl.current) { URL.revokeObjectURL(documentUrl.current); documentUrl.current = null; }
+      resetArtifact();
       settings.current = newSettings(); setModeState('bw'); setContrastState(DEFAULT_CONTRAST); setName(null);
     }
-  }, [cancelWork, customName, selectPage, syncPages]);
+  }, [cancelWork, customName, removeSelected, resetArtifact, selectPage, syncPages, activeId, pagesRef, setSelectedId, setArtifact]);
 
   const undoLast = async () => {
     if (!undo || busy) return;
-    const replacement = pagesRef.current.findIndex(page => page.id === undo.replacementId);
-    if (replacement === -1 && pagesRef.current.length >= MAX_PAGES) return;
     cancelWork();
-    const restored = { ...undo.page, settings: copySettings(undo.page.settings), preview: URL.createObjectURL(undo.page.previewBlob) };
-    if (replacement !== -1) {
-      URL.revokeObjectURL(pagesRef.current[replacement].preview);
-      pagesRef.current.splice(replacement, 1, restored);
-    } else pagesRef.current.splice(Math.min(undo.index, pagesRef.current.length), 0, restored);
-    setName(undo.name); setUndo(null); setArtifact(null); syncPages();
-    await selectPage(restored.id);
+    const restored = restoreUndo();
+    if (!restored) return;
+    setName(restored.name); setArtifact(null);
+    await selectPage(restored.page.id);
   };
 
   const movePage = async (offset: number) => {
-    if (busy || (offset !== -1 && offset !== 1)) return;
-    const index = pagesRef.current.findIndex(page => page.id === activeId.current);
-    const target = index + offset;
-    if (index < 0 || target < 0 || target >= pagesRef.current.length) return;
+    if (busy || !reorderSelected(offset)) return;
     cancelWork(); setBusy(true); setArtifact(null);
     const controller = new AbortController(); activeRender.current = controller;
     const job = generation.current;
-    [pagesRef.current[index], pagesRef.current[target]] = [pagesRef.current[target], pagesRef.current[index]];
-    syncPages();
     try { await publish(job, controller.signal); }
     catch { if (job === generation.current) setError('Le PDF n’a pas pu être créé.'); }
     finally { if (job === generation.current) setBusy(false); }
-  };
-
-  useEffect(() => {
-    let alive = true;
-    readDraft().then(draft => { if (alive) setPendingDraft(draft); })
-      .catch(() => { /* Export remains available without persistent storage. */ })
-      .finally(() => { if (alive) setDraftReady(true); });
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => {
-    if (!draftReady || pendingDraft || busy) return;
-    let alive = true;
-    const draft: Draft | null = pagesRef.current.length ? {
-      version: 1, savedAt: Date.now(), name: customName,
-      pages: pagesRef.current.map(page => ({ photo: page.photo, settings: copySettings(page.settings) })),
-    } : null;
-    writeDraft(draft).then(() => { if (alive) setDraftResult({ pages, name: customName, status: 'saved' }); })
-      .catch(() => { if (alive) setDraftResult({ pages, name: customName, status: 'temporary' }); });
-    return () => { alive = false; };
-  }, [draftReady, pendingDraft, pages, customName, busy]);
-
-  const discardDraft = async () => {
-    try { await writeDraft(null); setPendingDraft(null); }
-    catch { setError('Le brouillon local n’a pas pu être effacé. Réessayez.'); }
   };
 
   const restoreDraft = async () => {
@@ -341,27 +274,6 @@ export function useScanner(locale: Locale = 'fr') {
       if (activeImport.current === controller) activeImport.current = null;
       if (job === generation.current) { setProgress(null); setLoading(false); setBusy(false); }
     }
-  };
-
-  // PDF bytes are prepared before the tap so native sharing keeps user activation.
-  const pdf = useMemo(() => artifact && !busy ? { url: artifact.url, file: new File([artifact.pdfBlob], safeFilename(name || translate(locale, 'Mon document')), { type: 'application/pdf' }) } : null, [artifact, busy, name, locale]);
-
-  const save = () => {
-    setNotice('Téléchargement lancé. Si le PDF s’ouvre sur votre iPhone, touchez Partager puis « Enregistrer dans Fichiers ».');
-  };
-
-  const share = async () => {
-    if (!pdf || sharing.current) return;
-    const sharedGeneration = generation.current;
-    setError(''); setNotice('');
-    try {
-      if (!navigator.share || !navigator.canShare?.({ files: [pdf.file] })) { setFallback(true); return; }
-      sharing.current = true;
-      await navigator.share({ files: [pdf.file], title: pdf.file.name });
-      if (sharedGeneration === generation.current) setNotice('Le partage a été ouvert. Terminez l’envoi dans l’application choisie.');
-    } catch (cause) {
-      if (sharedGeneration === generation.current && !(cause instanceof Error && cause.name === 'AbortError')) setFallback(true);
-    } finally { sharing.current = false; }
   };
 
   const prepare = async (input: unknown) => {
@@ -409,11 +321,9 @@ export function useScanner(locale: Locale = 'fr') {
     activeImport.current?.abort();
     activeEditor.current?.abort();
     if (editorUrl.current) URL.revokeObjectURL(editorUrl.current);
-    for (const page of pagesRef.current) URL.revokeObjectURL(page.preview);
-    if (documentUrl.current) URL.revokeObjectURL(documentUrl.current);
     if (original.current) { original.current.width = 0; original.current.height = 0; }
   }, []);
 
-  const size = artifact ? (artifact.pdfBlob.size < 1024 * 1024 ? `${Math.max(1, Math.round(artifact.pdfBlob.size / 1024))} ${locale === 'fr' ? 'Ko' : 'KB'}` : `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(artifact.pdfBlob.size / (1024 * 1024))} ${locale === 'fr' ? 'Mo' : 'MB'}`) : '';
-  return { progress, pendingDraft, draftReady, draftStatus: !busy && draftResult?.pages === pages && draftResult.name === customName ? draftResult.status : 'saving', restoreDraft, discardDraft, canUndo: !!undo && (undo.replacementId !== null || pages.length < MAX_PAGES), undoLast, movePage, pages, activeIndex: pages.findIndex(page => page.id === selectedId), source: pages.length > 0, preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, editor, openEditor, closeEditor, applyEdits, defaultContrast: DEFAULT_CONTRAST, name, setName, busy, loading, pdf, error: translateMessage(locale, error), notice: translateMessage(locale, notice), fallback, setFallback, loadFiles, selectPage, rotate, save, share, size };
+
+  return { progress, pendingDraft, draftReady, draftStatus, restoreDraft, discardDraft, canUndo: !!undo && (undo.replacementId !== null || pages.length < MAX_PAGES), undoLast, movePage, pages, activeIndex: pages.findIndex(page => page.id === selectedId), source: pages.length > 0, preview, mode, setMode, contrast, setContrast, commitContrast, clearPhoto, editor, openEditor, closeEditor, applyEdits, defaultContrast: DEFAULT_CONTRAST, name, setName, busy, loading, pdf, error: translateMessage(locale, error), notice: translateMessage(locale, notice), fallback, setFallback, loadFiles, selectPage, rotate, save, share, size };
 }

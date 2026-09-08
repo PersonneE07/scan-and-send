@@ -1,7 +1,13 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import 'shadcn/tailwind.css';
-@import 'react-image-crop/dist/ReactCrop.css';
+/* State variants used by our Base UI primitives. */
+@custom-variant data-open (&[data-open]);
+@custom-variant data-closed (&[data-closed]);
+@custom-variant data-checked (&[data-checked]);
+@custom-variant data-unchecked (&[data-unchecked]);
+@custom-variant data-disabled (&[data-disabled]);
+@custom-variant data-horizontal (&[data-orientation="horizontal"]);
+@custom-variant data-vertical (&[data-orientation="vertical"]);
 @custom-variant dark (&:is(.dark *));
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);
@@ -87,9 +93,6 @@ h1 { margin: 0; font-size: clamp(28px, 3vw, 36px); letter-spacing: -1.25px; line
 .contrast-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; font-size: 14px; font-weight: 600; }
 .contrast-heading .contrast-slider { min-width: 0; }
 .contrast-heading output { color: var(--primary); font-variant-numeric: tabular-nums; background: var(--selected); border-radius: 6px; padding: 3px 8px; }
-.contrast-slider > div { min-height: 44px; }
-.contrast-slider [data-slot="slider-track"] { height: 5px; }
-.contrast-slider [data-slot="slider-thumb"] { width: 20px; height: 20px; border-width: 2px; box-shadow: 0 2px 5px #17203115; }
 .contrast-scale { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted-foreground); margin-top: -4px; }
 .contrast-footnote { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 5px; color: var(--muted-foreground); font-size: 13px; }
 .contrast-reset { min-height: 40px; padding: 8px 0 8px 8px; color: var(--primary); font-size: 13px; }
@@ -107,7 +110,7 @@ h1 { margin: 0; font-size: clamp(28px, 3vw, 36px); letter-spacing: -1.25px; line
 .export-actions a.action { display: flex; align-items: center; justify-content: center; background: var(--primary); color: var(--on-primary); text-decoration: none; }
 .export-actions a.action:hover { background: color-mix(in srgb, var(--primary), var(--foreground) 12%); }
 .helper { margin: 12px 0 0; color: var(--muted-foreground); font-size: 13px; text-align: center; line-height: 1.65; }
-.feedback { margin: 16px 0 0; border-radius: 10px; padding: 13px 16px; background: var(--info-bg); color: var(--info-text); font-size: 14px; }
+.feedback { display: block; margin: 16px 0 0; border-radius: 10px; padding: 13px 16px; background: var(--info-bg); color: var(--info-text); font-size: 14px; }
 .feedback.error { background: var(--error-bg); color: var(--danger); }
 .pdf-open { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); text-underline-offset: 3px; margin-top: 8px; font-size: 14px; }
 .pdf-open svg { width: 14px; }
@@ -146,7 +149,7 @@ h1 { margin: 0; font-size: clamp(28px, 3vw, 36px); letter-spacing: -1.25px; line
 .perspective-corner:active { cursor: grabbing; }
 .perspective-corner span { display: block; width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: var(--primary); box-shadow: 0 1px 5px #0008; }
 .perspective-corner:focus-visible { outline: 3px solid #79b8ff; outline-offset: -4px; }
-.perspective-help { margin: 0; color: #e4ebf6; font-size: 14px; line-height: 1.4; text-align: center; }
+.perspective-help { display: block; margin: 0; color: #e4ebf6; font-size: 14px; line-height: 1.4; text-align: center; }
 .perspective-help.invalid { color: #ffd2c5; }
 .resize-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .resize-heading h3 { font-size: 16px; font-weight: 600; margin: 0; }
@@ -232,11 +235,6 @@ h1 { margin: 0; font-size: clamp(28px, 3vw, 36px); letter-spacing: -1.25px; line
 .render-switch-row { gap: 12px; }
 .render-switch-row > button:not([data-slot]) { min-height: 36px; padding: 0 2px; cursor: pointer; }
 .render-switch-row > button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
-.render-switch-row [data-slot="switch"][data-unchecked] { background: #667184; }
-.render-switch-row [data-slot="switch"]::after { left: -4px; right: -4px; }
-.render-switch-row [data-slot="switch-thumb"] { background: #fff; }
-.dark .render-switch-row [data-slot="switch"][data-unchecked] { background: #8392a8; }
-.dark .render-switch-row [data-slot="switch-thumb"] { background: #101722; }
 .page-picker .page-chip { height: auto; min-width: 70px; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
 .page-chip img { width: 48px; height: 60px; object-fit: contain; background: white; border: 1px solid var(--border); }
 .page-order { display: flex; justify-content: space-between; gap: 8px; }
@@ -247,3 +245,17 @@ h1 { margin: 0; font-size: clamp(28px, 3vw, 36px); letter-spacing: -1.25px; line
 @media (max-width: 350px) {
   .filename-row { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 }
+
+.native-slider { appearance: none; width: 100%; height: 44px; margin: 0; cursor: pointer; }
+.native-slider::-webkit-slider-thumb { appearance: none; width: 20px; height: 20px; border: 2px solid var(--primary); border-radius: 50%; background: var(--card); box-shadow: 0 2px 5px #17203115; }
+.native-slider::-moz-range-thumb { width: 16px; height: 16px; border: 2px solid var(--primary); border-radius: 50%; background: var(--card); }
+.native-slider::-moz-range-track { background: transparent; }
+.native-slider:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.native-slider:disabled, .native-switch:disabled { opacity: .5; cursor: default; }
+.native-switch { display: inline-flex; justify-content: center; align-items: center; width: 36px; height: 36px; flex-shrink: 0; cursor: pointer; }
+.switch-track { width: 32px; height: 18px; padding: 1px; border-radius: 12px; background: #667184; }
+.switch-thumb { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.native-switch[aria-checked="true"] .switch-track { background: var(--primary); }
+.native-switch[aria-checked="true"] .switch-thumb { transform: translateX(14px); }
+.dark .switch-track { background: #8392a8; }
+.dark .switch-thumb { background: #101722; }

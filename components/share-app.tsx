@@ -50,7 +50,7 @@ export function ShareApp() {
           <Button className="action" onClick={copy}><Copy />{t("Copier le lien")}</Button>
           <DialogClose render={<Button variant="ghost" className="action" />}>{t("Fermer")}</DialogClose>
         </div>
-        {notice && <p role="status">{t(notice)}</p>}
+        {notice && <output>{t(notice)}</output>}
       </DialogContent>
     </Dialog>
   </>;

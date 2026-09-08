@@ -17,6 +17,7 @@ export function secureHtml(html) {
     "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' blob: data:",
+    "worker-src 'self'",
     "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",

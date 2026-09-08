@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-deprecated -- Test doubles intentionally replace browser APIs; merged DOM/Worker overloads flag these fixture properties. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -14,7 +15,7 @@ test('preferences restore valid choices and survive corrupt or blocked storage',
 });
 
 test('all scanner errors and UI translation keys have English translations', async () => {
-  for (const file of ['app/page.tsx', 'components/image-editor.tsx', 'components/share-app.tsx', 'components/perspective-cropper.tsx', 'lib/document.ts', 'hooks/use-scanner.ts']) {
+  for (const file of ['app/page.tsx', 'components/image-editor.tsx', 'components/share-app.tsx', 'components/perspective-cropper.tsx', 'lib/document.ts', 'lib/image-geometry.ts', 'lib/image-pixels.ts', 'lib/pdf.ts', 'hooks/use-local-draft.ts', 'hooks/use-pdf-export.ts', 'hooks/use-scanner.ts']) {
     const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
     const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
     function visit(node) {
@@ -54,8 +55,8 @@ test('preference controls persist choices and update language and theme together
   const { create, act } = await import('react-test-renderer');
   let source = await readFile(new URL('../components/preferences.tsx', import.meta.url), 'utf8');
   source = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-  for (const module of ['react', 'react/jsx-runtime', 'lucide-react']) {
-    source = source.replaceAll(`from "${module}"`, `from '${pathToFileURL(require.resolve(module)).href}'`).replaceAll(`from '${module}'`, `from '${pathToFileURL(require.resolve(module)).href}'`);
+  for (const specifier of ['react', 'react/jsx-runtime', 'lucide-react']) {
+    source = source.replaceAll(`from "${specifier}"`, `from '${pathToFileURL(require.resolve(specifier)).href}'`).replaceAll(`from '${specifier}'`, `from '${pathToFileURL(require.resolve(specifier)).href}'`);
   }
   source = source.replace("from '@/lib/i18n'", `from '${new URL('../lib/i18n.ts', import.meta.url).href}'`);
   const { PreferencesProvider, usePreferences } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
@@ -69,7 +70,7 @@ test('preference controls persist choices and update language and theme together
     if (root) await act(async () => root.unmount());
     for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; }
   });
-  function Probe() { api = usePreferences(); return null; }
+  function Probe() { const value = usePreferences(); React.useLayoutEffect(() => { api = value; }); return null; }
   await act(async () => { root = create(React.createElement(PreferencesProvider, null, React.createElement(Probe))); });
   assert.equal(api.t('Rogner'), 'Crop');
   assert.equal(dark, true);

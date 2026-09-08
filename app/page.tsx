@@ -1,8 +1,10 @@
+/* eslint-disable nextjs/no-img-element -- Private local blob images cannot use a server image optimizer. */
 "use client";
 import { usePreferences, PreferenceControls } from '@/components/preferences';
-import { useRef, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { Camera, ImagePlus, ScanLine, ShieldCheck, FileText, Download, Mail, RotateCw, RefreshCw, Check, LoaderCircle, ArrowUpRight, Trash2, Crop, Plus, Share2, ArrowLeft, ArrowRight, Undo2 } from 'lucide-react';
-import { ImageEditor } from '@/components/image-editor';
+const ImageEditor = lazy(() => import('@/components/image-editor').then(module => ({ default: module.ImageEditor })));
+
 import { ShareApp } from '@/components/share-app';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,7 +54,7 @@ export default function Home() {
               <Button ref={captureButton} className="action capture-button" onClick={() => camera.current?.click()} disabled={scan.busy || !scan.draftReady}><Camera />{t("Prendre une photo")}</Button>
               <Button variant="ghost" className="action import-button" onClick={() => gallery.current?.click()} disabled={scan.busy || !scan.draftReady}><ImagePlus />{t("Importer une photo")}</Button>
             </div>}
-            {scan.busy && <div className={scan.preview && !scan.loading ? 'preview-updating' : 'loading-overlay'} role="status"><LoaderCircle className="spin" aria-hidden="true" />{scan.progress ? t("Préparation de la page {current} sur {total}…", scan.progress) : scan.preview && !scan.loading ? t("Mise à jour du rendu…") : t("Préparation de votre document…")}</div>}
+            {scan.busy && <output className={scan.preview && !scan.loading ? 'preview-updating' : 'loading-overlay'}><LoaderCircle className="spin" aria-hidden="true" />{scan.progress ? t("Préparation de la page {current} sur {total}…", scan.progress) : scan.preview && !scan.loading ? t("Mise à jour du rendu…") : t("Préparation de votre document…")}</output>}
           </div>
           {(scan.source || scan.loading) && <div className="preview-toolbar">
             {scan.source && <>
@@ -78,11 +80,11 @@ export default function Home() {
           <div className="settings-section render-section">
             <div className="render-heading-row">
             <h2 className="section-heading" id="render-heading"><span className="step-num">01</span>{t("Rendu")}</h2>
-            <div className="render-switch-row" role="group" aria-labelledby="render-heading">
+            <fieldset className="render-switch-row" aria-labelledby="render-heading">
               <button type="button" disabled={scan.busy} onClick={() => scan.setMode('bw')} aria-pressed={scan.mode === 'bw'} className={scan.mode === 'bw' ? 'active' : ''} title={t("Noir et blanc")} aria-label={t("Noir et blanc")}>{t("N&B")}</button>
               <Switch checked={scan.mode === 'color'} onCheckedChange={checked => scan.setMode(checked ? 'color' : 'bw')} disabled={scan.busy} aria-label={t("Rendu couleur")} />
               <button type="button" disabled={scan.busy} onClick={() => scan.setMode('color')} aria-pressed={scan.mode === 'color'} className={scan.mode === 'color' ? 'active' : ''}>{t("Couleur")}</button>
-            </div>
+            </fieldset>
             </div>
             {scan.mode === 'bw' && <div className="contrast-control">
               <div className="contrast-heading"><span id="contrast-label">{t("Contraste")}</span>
@@ -115,7 +117,7 @@ export default function Home() {
             {scan.pdf && <a className="pdf-open" href={scan.pdf.url} target="_blank" rel="noopener noreferrer">{t("Ouvrir le PDF")}<ArrowUpRight /></a>}
           </div>
           {scan.error && <p className="feedback error" role="alert">{scan.error}</p>}
-          {scan.notice && <p className="feedback" role="status">{scan.notice}</p>}
+          {scan.notice && <output className="feedback">{scan.notice}</output>}
         </section>
       </div>
       <footer className="site-footer"><p className="local-note"><ShieldCheck aria-hidden="true" />{t("Aucun document envoyé sur un serveur.")}</p><ShareApp /></footer>
@@ -131,7 +133,7 @@ export default function Home() {
         {scan.error && <p role="alert" className="feedback error">{scan.error}</p>}
       </DialogContent>
     </Dialog>
-    {scan.editor && <ImageEditor key={scan.editor.url} image={scan.editor} onApply={scan.applyEdits} onCancel={scan.closeEditor} />}
+    {scan.editor && <Suspense fallback={<output className="feedback">{t("Préparation…")}</output>}><ImageEditor key={scan.editor.url} image={scan.editor} onApply={scan.applyEdits} onCancel={scan.closeEditor} /></Suspense>}
     <Dialog open={adding} onOpenChange={setAdding}>
       <DialogContent className="mail-dialog" showCloseButton={false}>
         <DialogTitle>{t("Ajouter une page")}</DialogTitle>
